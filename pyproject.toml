@@ -21,7 +21,7 @@ ignore = [
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["tests/unit"]
+testpaths = ["tests/unit"]  # integration and e2e are opt-in: they need the stack
 addopts = "-ra --strict-markers"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"

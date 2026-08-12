@@ -26,7 +26,7 @@ from search_metrics_common import (
     instrument_fastapi,
 )
 
-from .ingest import ingest_events
+from .ingest import ingest_events, ingest_spans
 from .rate_limit import RateLimitDecision, build_rate_limiter
 
 SERVICE_NAME = "telemetry-collector"
@@ -41,6 +41,7 @@ INGEST_LATENCY = Histogram(
     "collector_ingest_duration_seconds", "Time to validate and publish a request", ["endpoint"]
 )
 RATE_LIMITED = Counter("collector_rate_limited_total", "Requests rejected by the rate limiter")
+SPANS_INGESTED = Counter("collector_spans_ingested_total", "Trace spans accepted")
 
 
 @asynccontextmanager
@@ -155,6 +156,33 @@ async def ingest_batch(payload: dict, publisher=Depends(get_publisher)) -> Inges
 
     EVENTS_INGESTED.labels(status="accepted").inc(result.accepted)
     EVENTS_INGESTED.labels(status="rejected").inc(result.rejected)
+    return result
+
+
+@app.post(
+    "/api/v1/telemetry/spans",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=IngestResult,
+    summary="Ingest trace spans",
+    dependencies=[Depends(enforce_rate_limit)],
+)
+async def ingest_span_batch(payload: dict, publisher=Depends(get_publisher)) -> IngestResult:
+    """Accept spans for the trace store.
+
+    Spans arrive the same way events do so an adopter has one ingest path to
+    point services at. A deployment already running an OpenTelemetry collector
+    can write the same records from there instead.
+    """
+    spans = payload.get("spans")
+    if not isinstance(spans, list) or not spans:
+        raise BadBatch("body must contain a non-empty 'spans' array")
+    if len(spans) > settings.max_batch_size:
+        raise BatchTooLarge(len(spans), settings.max_batch_size)
+
+    with INGEST_LATENCY.labels(endpoint="spans").time():
+        result = await ingest_spans(spans, publisher)
+
+    SPANS_INGESTED.inc(result.accepted)
     return result
 
 

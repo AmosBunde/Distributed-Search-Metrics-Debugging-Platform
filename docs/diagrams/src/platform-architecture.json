@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Search Metrics & Debugging Platform",
-    "subtitle": "Telemetry ingest, stream analysis and query debugging \u2014 end to end",
+    "subtitle": "Telemetry ingest, stream analysis and query debugging — end to end",
     "quality_profile": "showcase",
     "views": [
       {
@@ -76,7 +76,7 @@
       "id": "kafka",
       "type": "messagebus",
       "label": "Apache Kafka",
-      "sublabel": "4 event topics",
+      "sublabel": "5 event topics",
       "pos": [
         540,
         310
@@ -382,7 +382,7 @@
       "title": "Ingest",
       "items": [
         "Collector validates, enriches and rate-limits every event",
-        "Kafka topics: search.events, search.results, search.errors, search.anomalies"
+        "Topics: search.events, search.results, search.errors, search.anomalies, search.spans"
       ]
     },
     {

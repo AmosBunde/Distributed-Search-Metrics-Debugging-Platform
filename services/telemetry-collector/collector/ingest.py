@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
-from search_metrics_common import IngestResult, SearchEvent
+from search_metrics_common import IngestResult, SearchEvent, TraceSpan
 from search_metrics_common.tracing import current_trace_id
 
 logger = logging.getLogger(__name__)
@@ -80,3 +80,27 @@ async def ingest_events(
         )
 
     return IngestResult(accepted=accepted, rejected=len(errors), errors=errors)
+
+
+async def ingest_spans(
+    raw_spans: list[dict[str, Any]],
+    publisher: Any,
+) -> IngestResult:
+    """Validate and publish trace spans.
+
+    Same partial-success contract as events: one malformed span does not cost
+    the caller the rest of the trace, and the response says which one failed.
+    """
+    errors: list[str] = []
+    valid: list[TraceSpan] = []
+
+    for index, raw in enumerate(raw_spans):
+        try:
+            valid.append(TraceSpan.model_validate(raw))
+        except ValidationError as exc:
+            errors.append(_describe(index, exc))
+
+    if valid:
+        await publisher.publish_spans(valid)
+
+    return IngestResult(accepted=len(valid), rejected=len(errors), errors=errors)

@@ -21,7 +21,7 @@ from typing import Any
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 
-from .models import AnomalyEvent, SearchEvent
+from .models import AnomalyEvent, SearchEvent, TraceSpan
 from .settings import Settings
 from .topics import Topic
 from .tracing import inject_trace_context
@@ -160,6 +160,21 @@ class EventPublisher:
                 "results": [result.model_dump() for result in event.results],
             },
         )
+
+    async def publish_spans(self, spans: Iterable[TraceSpan]) -> None:
+        """Publish trace spans, pipelined like events."""
+        pending = []
+        for span in spans:
+            pending.append(
+                await self._producer.send(
+                    self._settings.topic_name(Topic.SPANS),
+                    value=serialize(span),
+                    key=span.partition_key.encode("utf-8"),
+                    headers=inject_trace_context(),
+                )
+            )
+        for future in pending:
+            await future
 
     async def publish_anomaly(self, anomaly: AnomalyEvent) -> None:
         await self.publish(Topic.ANOMALIES, anomaly.service, anomaly)

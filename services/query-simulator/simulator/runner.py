@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from .generator import generate_batch
+from .generator import generate_batch, generate_spans
 from .scenarios import Scenario
 
 logger = logging.getLogger(__name__)
@@ -25,11 +25,16 @@ logger = logging.getLogger(__name__)
 MAX_BATCH = 500
 #: Send at most this often; below it, batches get too small to be efficient.
 MAX_BATCHES_PER_SECOND = 10
+#: Share of queries that also emit a trace. Production sampling is a real
+#: decision (ADR-0004); here it keeps span volume sane while guaranteeing that
+#: any run leaves traces to debug.
+DEFAULT_TRACE_SAMPLE = 0.05
 
 
 @dataclass
 class RunStats:
     sent: int = 0
+    spans_sent: int = 0
     accepted: int = 0
     rejected: int = 0
     failed_requests: int = 0
@@ -50,7 +55,7 @@ class RunStats:
             f"sent {self.sent} events in {self.elapsed_seconds:.1f}s "
             f"({self.achieved_qps:.0f} qps, {drift:+.0f}% vs target) — "
             f"accepted {self.accepted}, rejected {self.rejected}, "
-            f"failed requests {self.failed_requests}"
+            f"spans {self.spans_sent}, failed requests {self.failed_requests}"
         )
 
 
@@ -75,6 +80,7 @@ class SimulationRunner:
         qps: float,
         duration_seconds: int | None = None,
         seed: int | None = None,
+        trace_sample: float = DEFAULT_TRACE_SAMPLE,
     ) -> None:
         self.client = client
         self.endpoint = endpoint
@@ -82,6 +88,7 @@ class SimulationRunner:
         self.qps = qps
         self.duration = duration_seconds or scenario.total_seconds
         self.rng = random.Random(seed)
+        self.trace_sample = trace_sample
         self.stats = RunStats()
 
     async def send(self, events: list[dict[str, Any]]) -> None:
@@ -106,6 +113,23 @@ class SimulationRunner:
         body = response.json()
         self.stats.accepted += body.get("accepted", 0)
         self.stats.rejected += body.get("rejected", 0)
+
+    async def send_spans(self, spans: list[dict[str, Any]]) -> None:
+        try:
+            response = await self.client.post(
+                self.endpoint.replace("/batch", "/spans"), json={"spans": spans}
+            )
+        except Exception as exc:
+            self.stats.failed_requests += 1
+            logger.warning("span batch failed to send", extra={"error": str(exc)})
+            return
+
+        if response.status_code >= 400:
+            self.stats.failed_requests += 1
+            logger.warning("collector rejected the spans", extra={"status": response.status_code})
+            return
+
+        self.stats.spans_sent += len(spans)
 
     async def run(self) -> RunStats:
         batch_size, interval = plan_batches(self.qps)
@@ -137,7 +161,20 @@ class SimulationRunner:
                 )
 
             size = max(1, round(batch_size * phase.qps_multiplier))
-            await self.send(generate_batch(self.rng, phase, size))
+            events = generate_batch(self.rng, phase, size)
+
+            # Spans are generated before the events are sent, because generating
+            # them stamps the trace id onto the event that carries it.
+            spans = [
+                span
+                for event in events
+                if self.rng.random() < self.trace_sample
+                for span in generate_spans(self.rng, event)
+            ]
+
+            await self.send(events)
+            if spans:
+                await self.send_spans(spans)
 
             # Pace against the schedule, not against how long the send took.
             next_send += interval

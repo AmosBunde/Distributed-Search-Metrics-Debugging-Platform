@@ -17,7 +17,14 @@ class Topic(StrEnum):
     RESULTS = "results"
     ERRORS = "errors"
     ANOMALIES = "anomalies"
+    SPANS = "spans"
 
 
 #: Every logical topic the platform uses, in the order they appear in the pipeline.
-ALL_TOPICS: tuple[Topic, ...] = (Topic.EVENTS, Topic.RESULTS, Topic.ERRORS, Topic.ANOMALIES)
+ALL_TOPICS: tuple[Topic, ...] = (
+    Topic.EVENTS,
+    Topic.RESULTS,
+    Topic.ERRORS,
+    Topic.ANOMALIES,
+    Topic.SPANS,
+)

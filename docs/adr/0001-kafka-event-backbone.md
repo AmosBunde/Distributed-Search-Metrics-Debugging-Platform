@@ -21,9 +21,16 @@ durable buffer between them that supports replay.
 
 ## Decision
 
-We publish all telemetry to Apache Kafka across four topics — `search.events`,
-`search.results`, `search.errors` and `search.anomalies` — keyed by query id so
-that every record for one query lands on the same partition and keeps its order.
+We publish all telemetry to Apache Kafka across five topics — `search.events`,
+`search.results`, `search.errors`, `search.anomalies` and `search.spans` —
+keyed by query id (spans by trace id) so that every record for one query lands
+on the same partition and keeps its order.
+
+`search.spans` was added when the debugging half of the platform needed trace
+data in ClickHouse alongside metrics. Spans travel the same path as events so
+an adopter points their services at one ingest surface rather than two; a
+deployment that already runs an OpenTelemetry collector can write the same rows
+from there instead.
 
 ## Consequences
 

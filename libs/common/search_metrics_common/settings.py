@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     kafka_topic_results: str = "search.results"
     kafka_topic_errors: str = "search.errors"
     kafka_topic_anomalies: str = "search.anomalies"
+    kafka_topic_spans: str = "search.spans"
     kafka_consumer_group: str = "metrics-engine"
     kafka_topic_partitions: int = Field(default=6, ge=1)
     kafka_topic_retention_ms: int = Field(default=604_800_000, ge=0)
@@ -108,6 +109,7 @@ class Settings(BaseSettings):
             Topic.RESULTS: self.kafka_topic_results,
             Topic.ERRORS: self.kafka_topic_errors,
             Topic.ANOMALIES: self.kafka_topic_anomalies,
+            Topic.SPANS: self.kafka_topic_spans,
         }[topic]
 
     @property

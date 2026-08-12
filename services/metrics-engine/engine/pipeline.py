@@ -80,6 +80,28 @@ def result_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def span_row(payload: dict[str, Any]) -> dict[str, Any]:
+    """A `search_metrics.spans` row."""
+    start = str(payload.get("start_time", "")).replace("T", " ").replace("+00:00", "")
+    return {
+        "trace_id": payload["trace_id"],
+        "span_id": payload["span_id"],
+        "parent_span_id": payload.get("parent_span_id", ""),
+        "query_id": payload.get("query_id", ""),
+        "service": payload.get("service", ""),
+        "operation": payload.get("operation", ""),
+        "start_time": start[:26],
+        "duration_ms": payload.get("duration_ms", 0.0),
+        "status": payload.get("status", "ok"),
+        "attributes": payload.get("attributes", {}),
+    }
+
+
+def is_span_record(payload: dict[str, Any]) -> bool:
+    """Spans carry a span id; nothing else on the stream does."""
+    return "span_id" in payload and "operation" in payload
+
+
 def is_results_record(payload: dict[str, Any]) -> bool:
     """Results records carry documents but no latency; events are the reverse."""
     return "results" in payload and "latency_ms" not in payload
@@ -91,6 +113,7 @@ class BatchOutcome:
 
     events: list[SearchEvent] = field(default_factory=list)
     rollups: list[MetricRollup] = field(default_factory=list)
+    spans: list[dict[str, Any]] = field(default_factory=list)
     anomalies: list[AnomalyEvent] = field(default_factory=list)
     results: list[dict[str, Any]] = field(default_factory=list)
     invalid: int = 0
@@ -113,6 +136,10 @@ class Pipeline:
         for payload in payloads:
             # One consumer group reads three topics, so records are routed by
             # shape rather than by which topic they arrived on.
+            if is_span_record(payload):
+                outcome.spans.append(span_row(payload))
+                continue
+
             if is_results_record(payload):
                 outcome.results.extend(result_rows(payload))
                 continue
