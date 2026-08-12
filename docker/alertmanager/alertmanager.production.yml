@@ -1,0 +1,67 @@
+# Alert routing for a real deployment.
+#
+# Severity decides the channel, and the channel decides whether someone's phone
+# rings at 3am. That mapping is a deliberate, reviewable decision rather than a
+# property of whichever rule happened to fire.
+#
+# Secrets are read from files, never inlined: Alertmanager does not expand
+# environment variables, and a webhook URL in a committed config is a webhook
+# URL in git history. Mount them from a Kubernetes Secret:
+#
+#   kubectl create secret generic alertmanager-secrets \
+#     --from-literal=slack_url='https://hooks.slack.com/services/…' \
+#     --from-literal=pagerduty_key='…'
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: slack-search-oncall
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    - matchers: [severity="critical"]
+      receiver: pagerduty
+      group_wait: 10s
+      repeat_interval: 1h
+      # Continue so a critical alert also lands in chat: the person who is
+      # paged is rarely the only one who needs to know.
+      continue: true
+
+    - matchers: [channel="slack-search-quality"]
+      receiver: slack-search-quality
+
+inhibit_rules:
+  - source_matchers: [alertname="ServiceDown"]
+    target_matchers: [severity=~"warning|critical"]
+    equal: [job]
+
+receivers:
+  - name: slack-search-oncall
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_url
+        channel: '#search-oncall'
+        title: '{{ .CommonAnnotations.summary }}'
+        text: >-
+          {{ range .Alerts }}{{ .Annotations.description }}
+          {{ if .Annotations.runbook }}*What to do:* {{ .Annotations.runbook }}{{ end }}
+          {{ end }}
+        send_resolved: true
+
+  - name: slack-search-quality
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_url
+        channel: '#search-quality'
+        title: '{{ .CommonAnnotations.summary }}'
+        send_resolved: true
+
+  - name: pagerduty
+    pagerduty_configs:
+      - routing_key_file: /etc/alertmanager/secrets/pagerduty_key
+        description: '{{ .CommonAnnotations.summary }}'
+        details:
+          runbook: '{{ .CommonAnnotations.runbook }}'
+        send_resolved: true

@@ -512,3 +512,51 @@ class TestAliasShadowing:
                 assert not re.search(
                     rf"WHERE {column}\b", source
                 ), f"{name}: WHERE {column} resolves to its own String alias"
+
+
+class TestMetricCardinality:
+    """A label whose values are unbounded eventually kills Prometheus.
+
+    The proxy routes carry trace and query ids in the path, so labelling by
+    path would create one series per identifier — found by looking at a Grafana
+    legend that had a line per trace.
+    """
+
+    def test_proxy_metrics_are_labelled_by_route_not_by_path(self) -> None:
+        import inspect
+
+        import gateway.main as main
+
+        source = inspect.getsource(main)
+        assert (
+            "REQUESTS.labels(endpoint=path" not in source
+        ), "labelling by concrete path gives every identifier its own series"
+        assert "REQUESTS.labels(endpoint=endpoint" in source
+
+    def test_every_proxy_route_passes_a_stable_endpoint_name(self) -> None:
+        import inspect
+
+        import gateway.main as main
+
+        source = inspect.getsource(main)
+        for name in ("traces", "debug_query", "replay", "ingest_event", "ingest_batch"):
+            assert f'"{name}"' in source, f"proxy route {name} has no stable metric label"
+
+    def test_the_exported_metrics_have_bounded_label_values(self) -> None:
+        """Drive several distinct ids and confirm they collapse to one series."""
+        from prometheus_client import generate_latest
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"ok": True})
+
+        upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with client_with([], upstream) as client:
+            for identifier in ("trace-a", "trace-b", "trace-c"):
+                client.get(f"/api/v1/traces/{identifier}")
+
+        exported = generate_latest().decode()
+        series = [line for line in exported.splitlines() if "gateway_requests_total{" in line]
+        trace_series = [line for line in series if 'endpoint="traces"' in line]
+
+        assert trace_series, "no series recorded for the traces route"
+        assert not any("trace-a" in line for line in series), "a trace id leaked into a label"

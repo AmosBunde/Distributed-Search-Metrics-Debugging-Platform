@@ -308,7 +308,13 @@ async def slowest_queries(
 # service that owns them so there is still exactly one public surface.
 
 
-async def _proxy(request: Request, method: str, base: str, path: str) -> Response:
+async def _proxy(request: Request, method: str, base: str, path: str, endpoint: str) -> Response:
+    """Forward a request upstream.
+
+    `endpoint` is the route *template*, not the concrete path: labelling
+    metrics with the path would give every trace id its own Prometheus series,
+    which is unbounded cardinality and eventually an out-of-memory kill.
+    """
     client: httpx.AsyncClient = request.app.state.http
     body = await request.body()
 
@@ -321,10 +327,10 @@ async def _proxy(request: Request, method: str, base: str, path: str) -> Respons
             params=dict(request.query_params),
         )
     except httpx.HTTPError as exc:
-        REQUESTS.labels(endpoint=path, status="502").inc()
+        REQUESTS.labels(endpoint=endpoint, status="502").inc()
         raise HTTPException(status_code=502, detail=f"upstream service unavailable: {exc}") from exc
 
-    REQUESTS.labels(endpoint=path, status=str(upstream.status_code)).inc()
+    REQUESTS.labels(endpoint=endpoint, status=str(upstream.status_code)).inc()
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
@@ -334,27 +340,27 @@ async def _proxy(request: Request, method: str, base: str, path: str) -> Respons
 
 @app.get("/api/v1/traces/{trace_id}", summary="Full distributed trace")
 async def get_trace(trace_id: str, request: Request) -> Response:
-    return await _proxy(request, "GET", DEBUG_URL, f"/api/v1/traces/{trace_id}")
+    return await _proxy(request, "GET", DEBUG_URL, f"/api/v1/traces/{trace_id}", "traces")
 
 
 @app.get("/api/v1/debug/query/{query_id}", summary="Root cause debug information")
 async def debug_query(query_id: str, request: Request) -> Response:
-    return await _proxy(request, "GET", DEBUG_URL, f"/api/v1/debug/query/{query_id}")
+    return await _proxy(request, "GET", DEBUG_URL, f"/api/v1/debug/query/{query_id}", "debug_query")
 
 
 @app.post("/api/v1/debug/replay", summary="Replay a failed query")
 async def replay(request: Request) -> Response:
-    return await _proxy(request, "POST", DEBUG_URL, "/api/v1/debug/replay")
+    return await _proxy(request, "POST", DEBUG_URL, "/api/v1/debug/replay", "replay")
 
 
 @app.post("/api/v1/telemetry/event", summary="Ingest a single search event")
 async def ingest_event(request: Request) -> Response:
-    return await _proxy(request, "POST", COLLECTOR_URL, "/api/v1/telemetry/event")
+    return await _proxy(request, "POST", COLLECTOR_URL, "/api/v1/telemetry/event", "ingest_event")
 
 
 @app.post("/api/v1/telemetry/batch", summary="Ingest a batch of search events")
 async def ingest_batch(request: Request) -> Response:
-    return await _proxy(request, "POST", COLLECTOR_URL, "/api/v1/telemetry/batch")
+    return await _proxy(request, "POST", COLLECTOR_URL, "/api/v1/telemetry/batch", "ingest_batch")
 
 
 @app.get("/health")

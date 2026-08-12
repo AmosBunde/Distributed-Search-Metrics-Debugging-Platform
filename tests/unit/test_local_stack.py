@@ -7,6 +7,7 @@ a compose variable missing from `.env.example`, or a scrape target that no
 longer matches a service name.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -332,3 +333,123 @@ class TestHelmChart:
         """A catch-all dashboard path first would swallow every API request."""
         ingress = (self.CHART / "templates" / "ingress.yaml").read_text(encoding="utf-8")
         assert ingress.index("path: /api") < ingress.index("path: /\n")
+
+
+class TestObservability:
+    """Dashboards and alert rules are configuration, and rot like any other."""
+
+    RULES = ROOT / "docker" / "prometheus" / "rules" / "platform.yml"
+    DASHBOARDS = ROOT / "docker" / "grafana" / "dashboards"
+
+    @pytest.fixture(scope="class")
+    def rules(self) -> dict:
+        return yaml.safe_load(self.RULES.read_text(encoding="utf-8"))
+
+    def test_the_readme_alert_table_is_implemented(self, rules: dict) -> None:
+        """The README promises these five by threshold; they must exist."""
+        alerts = {
+            rule["alert"] for group in rules["groups"] for rule in group["rules"] if "alert" in rule
+        }
+        for name in (
+            "SearchLatencyP99High",
+            "SearchErrorRateHigh",
+            "KafkaConsumerLagGrowing",
+            "ServiceDown",
+            "MetricsEngineStalled",
+        ):
+            assert name in alerts
+
+    def test_every_alert_waits_before_firing(self, rules: dict) -> None:
+        """One scrape over a threshold is noise; paging on it trains people to ignore alerts."""
+        for group in rules["groups"]:
+            for rule in group["rules"]:
+                if "alert" in rule:
+                    assert rule.get("for"), f"{rule['alert']} fires on a single evaluation"
+
+    def test_every_alert_says_what_to_do(self, rules: dict) -> None:
+        """An alert nobody can act on is a notification."""
+        for group in rules["groups"]:
+            for rule in group["rules"]:
+                if "alert" not in rule:
+                    continue
+                annotations = rule.get("annotations", {})
+                assert annotations.get("summary"), f"{rule['alert']} has no summary"
+                assert annotations.get("runbook"), f"{rule['alert']} has no runbook"
+
+    def test_every_alert_routes_somewhere(self, rules: dict) -> None:
+        for group in rules["groups"]:
+            for rule in group["rules"]:
+                if "alert" in rule:
+                    labels = rule.get("labels", {})
+                    assert labels.get("severity") in {"warning", "critical"}
+                    assert labels.get("channel"), f"{rule['alert']} has no channel"
+
+    def test_ratio_rules_report_zero_rather_than_nothing(self, rules: dict) -> None:
+        """ "No data" on an error panel reads as broken instrumentation."""
+        for group in rules["groups"]:
+            for rule in group["rules"]:
+                if "record" in rule and "ratio" in rule["record"]:
+                    assert (
+                        "or vector(0)" in rule["expr"]
+                    ), f"{rule['record']} renders as No data when there is no traffic"
+
+    def test_all_five_documented_dashboards_exist(self) -> None:
+        titles = {
+            json.loads(path.read_text(encoding="utf-8"))["title"]
+            for path in self.DASHBOARDS.glob("*.json")
+        }
+        assert titles == {
+            "Search Quality Overview",
+            "Anomaly Detection",
+            "Service Health",
+            "Kafka Throughput",
+            "ClickHouse Performance",
+        }
+
+    def test_dashboards_reference_the_provisioned_datasource(self) -> None:
+        """A generated datasource uid leaves every panel empty."""
+        provisioned = yaml.safe_load(
+            (ROOT / "docker/grafana/provisioning/datasources/datasources.yml").read_text(
+                encoding="utf-8"
+            )
+        )
+        uids = {source.get("uid") for source in provisioned["datasources"]}
+        assert "prometheus" in uids
+
+        for path in self.DASHBOARDS.glob("*.json"):
+            dashboard = json.loads(path.read_text(encoding="utf-8"))
+            for panel in dashboard["panels"]:
+                assert panel["datasource"]["uid"] == "prometheus", path.name
+
+    def test_dashboards_handle_an_empty_window(self) -> None:
+        for path in self.DASHBOARDS.glob("*.json"):
+            dashboard = json.loads(path.read_text(encoding="utf-8"))
+            for panel in dashboard["panels"]:
+                assert (
+                    "noValue" in panel["fieldConfig"]["defaults"]
+                ), f"{path.name}: {panel['title']} renders blank with no data"
+
+    def test_the_local_alertmanager_config_needs_no_secrets(self) -> None:
+        """Alertmanager does not expand environment variables."""
+        config = (ROOT / "docker/alertmanager/alertmanager.yml").read_text(encoding="utf-8")
+        assert "${" not in config, "a placeholder here fails to load at startup"
+        assert "hooks.slack.com" not in config
+
+    def test_the_production_config_reads_secrets_from_files(self) -> None:
+        config = (ROOT / "docker/alertmanager/alertmanager.production.yml").read_text(
+            encoding="utf-8"
+        )
+        assert "api_url_file" in config
+        assert "routing_key_file" in config
+
+        # An illustrative URL in a comment is fine; a real token is not.
+        import re
+
+        assert not re.search(r"hooks\.slack\.com/services/T[A-Z0-9]{6,}", config)
+
+    def test_an_outage_does_not_page_three_times(self) -> None:
+        config = yaml.safe_load(
+            (ROOT / "docker/alertmanager/alertmanager.yml").read_text(encoding="utf-8")
+        )
+        inhibit = config["inhibit_rules"]
+        assert any("ServiceDown" in str(rule["source_matchers"]) for rule in inhibit)

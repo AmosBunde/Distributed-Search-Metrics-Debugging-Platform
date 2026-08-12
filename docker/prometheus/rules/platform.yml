@@ -1,0 +1,173 @@
+# Alert rules for the search metrics platform.
+#
+# Every rule here has a `for` clause: a metric crossing a threshold for one
+# scrape is noise, and paging on it is how people learn to ignore alerts. Each
+# annotation says what to do, not just what happened — an alert nobody can act
+# on is a notification.
+
+groups:
+  - name: search-platform-slo
+    interval: 30s
+    rules:
+      # Recording rules first: the alerts below and the Grafana panels then read
+      # the same numbers, so a dashboard can never disagree with a page.
+      - record: platform:collector_ingest_rate5m
+        expr: sum(rate(collector_events_ingested_total{status="accepted"}[5m])) or vector(0)
+
+      # `or vector(0)` matters: with no traffic at all the inner sums produce
+      # no series, and the ratio would render as "No data" rather than 0% —
+      # which on an error panel reads as broken instrumentation.
+      - record: platform:collector_rejection_ratio5m
+        expr: |
+          (sum(rate(collector_events_ingested_total{status="rejected"}[5m])) or vector(0))
+          /
+          clamp_min(sum(rate(collector_events_ingested_total[5m])) or vector(0), 0.001)
+
+      - record: platform:engine_processing_rate5m
+        expr: sum(rate(engine_events_processed_total[5m])) or vector(0)
+
+      - record: platform:gateway_request_rate5m
+        expr: sum by (endpoint) (rate(gateway_requests_total[5m]))
+
+      - record: platform:gateway_error_ratio5m
+        expr: |
+          (sum(rate(gateway_requests_total{status=~"5.."}[5m])) or vector(0))
+          /
+          clamp_min(sum(rate(gateway_requests_total[5m])) or vector(0), 0.001)
+
+      - alert: SearchLatencyP99High
+        expr: histogram_quantile(0.99, sum by (le) (rate(gateway_query_duration_seconds_bucket[5m]))) > 2
+        for: 5m
+        labels:
+          severity: critical
+          channel: pagerduty
+        annotations:
+          summary: "Query p99 above 2s for 5 minutes"
+          description: >-
+            The API gateway's p99 has been above 2 seconds for 5 minutes
+            (currently {{ $value | humanizeDuration }}).
+          runbook: >-
+            Check ClickHouse first: `make check-metrics`. A slow analytics store
+            shows up here before it shows up anywhere else. If ClickHouse is
+            healthy, look at gateway cache hit rate — a cold Redis turns every
+            dashboard poll into a scan.
+
+      - alert: SearchErrorRateHigh
+        expr: platform:gateway_error_ratio5m > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "Gateway error rate above 1%"
+          description: "{{ $value | humanizePercentage }} of gateway requests are failing."
+          runbook: >-
+            A 503 here means ClickHouse could not answer, which is upstream of
+            the gateway. Check `make health` before looking at the gateway
+            itself.
+
+      - alert: IngestRejectionRateHigh
+        expr: platform:collector_rejection_ratio5m > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "More than 5% of submitted events are being rejected"
+          description: >-
+            {{ $value | humanizePercentage }} of events are failing validation.
+            The platform is fine; something upstream is sending bad data.
+          runbook: >-
+            The collector's response names the field at fault. Check a producer's
+            logs for 422s before changing anything here.
+
+  - name: search-platform-pipeline
+    interval: 30s
+    rules:
+      - alert: KafkaConsumerLagGrowing
+        expr: sum(kafka_consumergroup_lag{consumergroup="metrics-engine"}) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "Metrics engine is more than 10,000 messages behind"
+          description: "Consumer lag is {{ $value | humanize }} and has been for 10 minutes."
+          runbook: >-
+            Lag that grows steadily means the engine cannot keep up with ingest.
+            Parallelism is capped by partition count (ADR-0003), so the lever is
+            more partitions *and* more engine replicas — adding replicas alone
+            does nothing.
+
+      - alert: MetricsEngineStalled
+        expr: platform:collector_ingest_rate5m > 1 and platform:engine_processing_rate5m == 0
+        for: 5m
+        labels:
+          severity: critical
+          channel: pagerduty
+        annotations:
+          summary: "Events are arriving but the engine is processing none"
+          description: >-
+            The collector is accepting events and the engine has processed
+            nothing for 5 minutes. Data is accumulating in Kafka, not being lost.
+          runbook: >-
+            Check the engine's logs for insert failures: it deliberately does not
+            commit offsets when ClickHouse rejects a batch, so a stalled engine
+            usually means a broken ClickHouse.
+
+      - alert: ClickHouseWriteFailures
+        expr: increase(engine_events_invalid_total[15m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "The engine is discarding records it cannot decode"
+          description: "{{ $value | humanize }} unreadable records in 15 minutes."
+          runbook: >-
+            The collector validates on the way in, so this means a producer is
+            bypassing it or the event schema changed under a running consumer.
+
+      - alert: AnomalyStorm
+        expr: sum(increase(engine_anomalies_detected_total[10m])) > 50
+        for: 5m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "An unusual number of anomalies is being reported"
+          description: >-
+            {{ $value | humanize }} anomalies in 10 minutes. Either something is
+            genuinely wrong across many services, or the detector's baseline has
+            been poisoned by a traffic shift.
+          runbook: >-
+            Check whether the anomalies share a service or a metric. A single
+            metric across every service usually means a platform change, not an
+            application one.
+
+  - name: search-platform-availability
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"telemetry-collector|metrics-engine|debug-service|api-gateway"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          channel: pagerduty
+        annotations:
+          summary: "{{ $labels.job }} is not responding to scrapes"
+          description: "{{ $labels.job }} at {{ $labels.instance }} has been down for 2 minutes."
+          runbook: "kubectl logs -l app.kubernetes.io/component={{ $labels.job }} --tail=100"
+
+      - alert: CollectorRateLimitingHeavily
+        expr: rate(collector_rate_limited_total[5m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+          channel: slack
+        annotations:
+          summary: "The collector is rejecting a sustained volume of requests"
+          description: "{{ $value | humanize }} requests per second are being rate limited."
+          runbook: >-
+            Either a client is misbehaving or the limit is now too low for real
+            traffic. Check which client id dominates before raising it.
