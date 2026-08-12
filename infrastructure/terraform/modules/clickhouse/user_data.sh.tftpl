@@ -1,0 +1,43 @@
+#!/bin/bash
+# Bootstrap a ClickHouse server.
+#
+# The data volume is mounted before the server starts: ClickHouse would
+# otherwise create its data directory on the root volume, which is small, and
+# nobody would notice until it filled.
+set -euo pipefail
+
+dnf install -y yum-utils
+curl -fsSL https://packages.clickhouse.com/rpm/clickhouse.repo -o /etc/yum.repos.d/clickhouse.repo
+dnf install -y clickhouse-server-${clickhouse_version} clickhouse-client-${clickhouse_version}
+
+DEVICE=${data_device}
+for candidate in ${data_device} /dev/xvdf /dev/sdf; do
+    if [ -b "$candidate" ]; then DEVICE="$candidate"; break; fi
+done
+
+if ! blkid "$DEVICE" >/dev/null 2>&1; then
+    mkfs.xfs "$DEVICE"
+fi
+
+mkdir -p /var/lib/clickhouse
+echo "$DEVICE /var/lib/clickhouse xfs defaults,noatime,nofail 0 2" >> /etc/fstab
+mount -a
+chown -R clickhouse:clickhouse /var/lib/clickhouse
+
+cat > /etc/clickhouse-server/config.d/listen.xml <<'XML'
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <max_concurrent_queries>200</max_concurrent_queries>
+</clickhouse>
+XML
+
+systemctl enable --now clickhouse-server
+
+# Wait for the server, then create the database the platform expects.
+for _ in $(seq 1 30); do
+    if clickhouse-client --query "SELECT 1" >/dev/null 2>&1; then break; fi
+    sleep 2
+done
+
+clickhouse-client --query "CREATE DATABASE IF NOT EXISTS ${database}"
+echo "clickhouse ready for cluster ${cluster_name} as user ${username}"
