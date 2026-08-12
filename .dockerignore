@@ -1,0 +1,15 @@
+.git
+.github
+docs
+infrastructure
+helm
+tests/e2e
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/htmlcov
+.env
+.env.*
+!.env.example
+*.md

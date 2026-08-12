@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Node
+node_modules/
+.vite/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+terraform.tfvars
+!terraform.tfvars.example
+.terraform.lock.hcl
+
+# Cloud credentials — never commit
+azure-credentials.json
+*-service-account.json
+kubeconfig*
+
+# Diagram build intermediates (committed artifacts are explicit)
+docs/diagrams/**/*.snapshot.json
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
