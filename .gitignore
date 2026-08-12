@@ -48,3 +48,6 @@ docs/diagrams/**/*.snapshot.json
 .vscode/
 .DS_Store
 *.swp
+
+# Dashboard build output
+services/dashboard/dist/

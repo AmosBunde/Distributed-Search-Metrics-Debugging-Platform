@@ -316,6 +316,17 @@ services:
       COLLECTOR_URL: http://telemetry-collector:8001
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: services/dashboard/Dockerfile
+    <<: *restart
+    container_name: search-metrics-dashboard
+    depends_on:
+      api-gateway: { condition: service_healthy }
+    ports:
+      - "${DASHBOARD_PORT:-3000}:8080"
+
 volumes:
   kafka-data:
   clickhouse-data:

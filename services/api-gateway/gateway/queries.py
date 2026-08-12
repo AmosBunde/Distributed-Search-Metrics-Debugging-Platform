@@ -253,7 +253,9 @@ class MetricsQueries:
                    round(z_score, 3) AS z_score, severity, sample_count,
                    toString(detected_at) AS detected_at
             FROM anomalies
-            WHERE window_start BETWEEN {{start:DateTime}} AND {{end:DateTime}}
+            -- Qualified: the SELECT aliases `window_start` to a String, and an
+            -- unqualified filter would resolve to that alias and fail to compare.
+            WHERE anomalies.window_start BETWEEN {{start:DateTime}} AND {{end:DateTime}}
               {filters}
             ORDER BY detected_at DESC
             LIMIT {{limit:UInt32}} OFFSET {{offset:UInt32}}
@@ -275,7 +277,8 @@ class MetricsQueries:
             SELECT query_id, trace_id, service, query, latency_ms, status,
                    result_count, relevance_score, toString(timestamp) AS timestamp
             FROM events
-            WHERE timestamp BETWEEN {{start:DateTime}} AND {{end:DateTime}}
+            -- Qualified for the same reason as above.
+            WHERE events.timestamp BETWEEN {{start:DateTime}} AND {{end:DateTime}}
               {self._service_filter(service)}
             ORDER BY latency_ms DESC
             LIMIT {{limit:UInt32}}
