@@ -1,9 +1,12 @@
 """Make a service's `app` package importable from the unit tests.
 
-Each service is a self-contained deployable with its own `app` package rather
-than an installed library, so tests put the service directory on `sys.path`
-before importing it. Only one service's `app` can be imported per test session,
-which is why each service has its own test module.
+Each service is a self-contained deployable rather than an installed library,
+so tests put its directory on `sys.path` before importing it.
+
+Every service names its package after itself — `collector`, `engine`, and so on
+— rather than the conventional `app`. With `app` they collide: pytest runs one
+session, the first `app` imported wins, and every other service's test module
+fails with a confusing ModuleNotFoundError.
 """
 
 from __future__ import annotations

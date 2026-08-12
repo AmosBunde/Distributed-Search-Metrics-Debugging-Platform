@@ -11,16 +11,16 @@ WORKDIR /app
 COPY libs/common /tmp/common
 RUN pip install --no-cache-dir /tmp/common && rm -rf /tmp/common
 
-COPY services/telemetry-collector/requirements.txt .
+COPY services/metrics-engine/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY services/telemetry-collector/collector ./collector
+COPY services/metrics-engine/engine ./engine
 
-RUN useradd --create-home --uid 10001 collector
-USER collector
+RUN useradd --create-home --uid 10001 engine
+USER engine
 
-EXPOSE 8001
+EXPOSE 8002
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
-  CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8001/health').read()"
+  CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8002/health').read()"
 
-CMD ["uvicorn", "collector.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "engine.main:app", "--host", "0.0.0.0", "--port", "8002"]
