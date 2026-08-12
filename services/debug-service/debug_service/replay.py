@@ -30,11 +30,18 @@ class ReplayStatus(StrEnum):
     FAILED = "failed"
 
 
+#: A replay target is a bare service name on the internal network — never a
+#: URL, host:port or path. Anything else is an attempt to make this service
+#: issue a request somewhere it should not (SSRF), so the shape is constrained
+#: here and the *value* is checked against an allowlist before it is used.
+SERVICE_NAME_PATTERN = r"^[a-z][a-z0-9-]{0,62}$"
+
+
 class ReplayRequest(BaseModel):
     """What the dashboard sends to re-run a query."""
 
     query_id: str = Field(min_length=1, max_length=128)
-    target_service: str | None = Field(default=None, max_length=64)
+    target_service: str | None = Field(default=None, max_length=63, pattern=SERVICE_NAME_PATTERN)
     requested_by: str | None = Field(default=None, max_length=128)
 
 

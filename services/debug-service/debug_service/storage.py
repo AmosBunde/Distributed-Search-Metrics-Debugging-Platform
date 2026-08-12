@@ -42,7 +42,13 @@ class ClickHouseReader:
 
     async def query(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         client = await self._http()
-        request_params = {"database": self._database, "default_format": "JSONEachRow"}
+        request_params: dict[str, str] = {
+            "database": self._database,
+            "default_format": "JSONEachRow",
+            # Without this ClickHouse returns 64-bit integers as JSON strings,
+            # so every consumer would have to parse counts back to numbers.
+            "output_format_json_quote_64bit_integers": "0",
+        }
         for name, value in (params or {}).items():
             request_params[f"param_{name}"] = str(value)
 
@@ -146,12 +152,16 @@ class ReplayJobStore:
 
     async def save(self, job: Any) -> None:
         record = job.as_dict()
+
         if self._pool is None:
             # No database configured (tests, or a degraded start): keep the job
             # in memory so the API still answers, and say so in /health.
             self._memory[record["id"]] = record
             return
 
+        # asyncpg binds by type, not by the ::timestamptz cast in the SQL, so
+        # timestamps must be passed as datetime objects rather than the ISO
+        # strings the serialised form uses.
         async with self._pool.acquire() as connection:
             await connection.execute(
                 """
@@ -160,8 +170,7 @@ class ReplayJobStore:
                     completed_at, original_latency_ms, replay_latency_ms,
                     original_result_count, replay_result_count, results_match, diff, error
                 ) VALUES (
-                    $1::uuid, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz,
-                    $8, $9, $10, $11, $12, $13::jsonb, $14
+                    $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     status = EXCLUDED.status,
@@ -172,20 +181,20 @@ class ReplayJobStore:
                     diff = EXCLUDED.diff,
                     error = EXCLUDED.error
                 """,
-                record["id"],
-                record["query_id"],
-                record["target_service"],
-                record["status"],
-                record["requested_by"],
-                record["requested_at"],
-                record["completed_at"],
-                (record["original"] or {}).get("latency_ms"),
-                (record["replay"] or {}).get("latency_ms"),
-                (record["original"] or {}).get("result_count"),
-                (record["replay"] or {}).get("result_count"),
-                (record["diff"] or {}).get("results_match"),
+                str(job.id),
+                job.query_id,
+                job.target_service,
+                str(job.status),
+                job.requested_by,
+                job.requested_at,
+                job.completed_at,
+                job.original.latency_ms if job.original else None,
+                job.replay.latency_ms if job.replay else None,
+                job.original.result_count if job.original else None,
+                job.replay.result_count if job.replay else None,
+                job.diff.results_match if job.diff else None,
                 json.dumps(record["diff"]) if record["diff"] else None,
-                record["error"],
+                job.error,
             )
 
     async def get(self, job_id: str) -> dict[str, Any] | None:

@@ -7,6 +7,8 @@ The half of the platform that answers "why was this query slow?" rather than
 from __future__ import annotations
 
 import logging
+import os
+import re
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -22,7 +24,7 @@ from search_metrics_common import (
     instrument_fastapi,
 )
 
-from .replay import QueryRun, ReplayJob, ReplayRequest, execute_replay
+from .replay import SERVICE_NAME_PATTERN, QueryRun, ReplayJob, ReplayRequest, execute_replay
 from .root_cause import analyse, slowest_service, summarise
 from .storage import ClickHouseReader, ReplayJobStore
 from .trace import CyclicTraceError, build_trace
@@ -36,6 +38,44 @@ TRACES_ASSEMBLED = Counter("debug_traces_assembled_total", "Traces assembled fro
 FINDINGS_PRODUCED = Counter("debug_findings_total", "Root cause findings", ["kind"])
 REPLAYS = Counter("debug_replays_total", "Replay jobs", ["status"])
 ANALYSIS_DURATION = Histogram("debug_analysis_duration_seconds", "Time to analyse one trace")
+
+
+#: Services a replay may be sent to. Configured per environment; the default
+#: covers the services the local stack generates traffic for.
+REPLAY_TARGETS: frozenset[str] = frozenset(
+    name.strip()
+    for name in os.environ.get(
+        "REPLAY_ALLOWED_TARGETS",
+        "search-api,ranking-service,index-service,suggest-service",
+    ).split(",")
+    if name.strip()
+)
+
+
+def resolve_target(candidate: str | None, recorded_service: str | None) -> str:
+    """Return a safe replay target, or refuse.
+
+    Replay is the one place this service makes an outbound request to an
+    address influenced by its caller, which makes it the one place server-side
+    request forgery is possible. The target must therefore be a bare service
+    name *and* be on the allowlist — a name that merely looks well-formed is not
+    enough, since the internal network contains plenty of things that should
+    never be reachable this way.
+    """
+    target = candidate or recorded_service
+    if not target:
+        raise ValueError("no replay target: none requested and none recorded")
+
+    if not re.match(SERVICE_NAME_PATTERN, target):
+        raise ValueError(f"{target!r} is not a service name")
+
+    if target not in REPLAY_TARGETS:
+        raise ValueError(
+            f"{target!r} is not an allowed replay target "
+            f"(allowed: {', '.join(sorted(REPLAY_TARGETS))})"
+        )
+
+    return target
 
 
 class HttpReplayExecutor:
@@ -178,7 +218,10 @@ async def replay_query(
         raise HTTPException(status_code=404, detail=f"no recorded run for query {request.query_id}")
 
     event = await reader.event_for_query(request.query_id)
-    target = request.target_service or (event or {}).get("service") or "search-api"
+    try:
+        target = resolve_target(request.target_service, (event or {}).get("service"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     job = ReplayJob(
         id=uuid.uuid4(),

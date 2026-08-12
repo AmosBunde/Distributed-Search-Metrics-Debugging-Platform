@@ -510,3 +510,133 @@ class TestApi:
 
         assert body["service"] == "debug-service"
         assert body["postgres"] is False
+
+
+class TestReplayTargetIsNotAttackerControlled:
+    """Replay is the one outbound request whose address a caller influences.
+
+    Without an allowlist it is server-side request forgery: a caller could point
+    the service at cloud metadata, an internal admin endpoint, or anything else
+    reachable from the pod.
+    """
+
+    def test_an_allowed_service_resolves(self) -> None:
+        from debug_service.main import resolve_target
+
+        assert resolve_target("search-api", None) == "search-api"
+
+    def test_the_recorded_service_is_used_when_none_is_requested(self) -> None:
+        from debug_service.main import resolve_target
+
+        assert resolve_target(None, "ranking-service") == "ranking-service"
+
+    @pytest.mark.parametrize(
+        "hostile",
+        [
+            "169.254.169.254",
+            "localhost:8003",
+            "search-api/../../admin",
+            "evil.example.com",
+            "search-api@evil.example.com",
+            "http://evil.example.com",
+        ],
+    )
+    def test_a_target_off_the_allowlist_is_refused(self, hostile: str) -> None:
+        from debug_service.main import resolve_target
+
+        with pytest.raises(ValueError):
+            resolve_target(hostile, None)
+
+    def test_a_recorded_service_is_still_checked(self) -> None:
+        """Data from our own store is not automatically trustworthy."""
+        from debug_service.main import resolve_target
+
+        with pytest.raises(ValueError):
+            resolve_target(None, "169.254.169.254")
+
+    def test_no_target_at_all_is_refused(self) -> None:
+        from debug_service.main import resolve_target
+
+        with pytest.raises(ValueError, match="no replay target"):
+            resolve_target(None, None)
+
+    def test_the_api_rejects_a_malformed_target_with_422(self) -> None:
+        reader = FakeReader(event=EVENT, documents=["d1"])
+        with client_with(reader) as client:
+            response = client.post(
+                "/api/v1/debug/replay",
+                json={"query_id": "q-1", "target_service": "http://169.254.169.254"},
+            )
+        assert response.status_code == 422
+
+    def test_the_api_rejects_a_well_formed_but_disallowed_target_with_400(self) -> None:
+        reader = FakeReader(event=EVENT, documents=["d1"])
+        with client_with(reader) as client:
+            response = client.post(
+                "/api/v1/debug/replay",
+                json={"query_id": "q-1", "target_service": "internal-admin"},
+            )
+        assert response.status_code == 400
+        assert "not an allowed replay target" in response.json()["detail"]
+
+
+class TestPostgresPersistence:
+    """asyncpg binds by Python type, not by the SQL cast."""
+
+    @pytest.mark.asyncio
+    async def test_timestamps_are_bound_as_datetimes_not_strings(self) -> None:
+        """A `::timestamptz` cast in the SQL does not make asyncpg accept a string."""
+        import uuid
+        from datetime import datetime
+
+        captured: dict = {}
+
+        class FakeConnection:
+            async def execute(self, sql: str, *args) -> None:
+                captured["args"] = args
+
+        class FakePool:
+            def acquire(self):
+                from contextlib import asynccontextmanager
+
+                @asynccontextmanager
+                async def ctx():
+                    yield FakeConnection()
+
+                return ctx()
+
+        store = ReplayJobStore(pool=FakePool())
+        job = ReplayJob(id=uuid.uuid4(), query_id="q-1", target_service="search-api")
+        await store.save(job)
+
+        requested_at = captured["args"][5]
+        assert isinstance(
+            requested_at, datetime
+        ), f"requested_at must be a datetime, got {type(requested_at).__name__}"
+
+    @pytest.mark.asyncio
+    async def test_numeric_columns_are_bound_as_numbers(self) -> None:
+        import uuid
+
+        captured: dict = {}
+
+        class FakeConnection:
+            async def execute(self, sql: str, *args) -> None:
+                captured["args"] = args
+
+        class FakePool:
+            def acquire(self):
+                from contextlib import asynccontextmanager
+
+                @asynccontextmanager
+                async def ctx():
+                    yield FakeConnection()
+
+                return ctx()
+
+        job = ReplayJob(id=uuid.uuid4(), query_id="q-1", target_service="search-api")
+        job.original = QueryRun(query="q", latency_ms=100.0, result_count=3)
+
+        await ReplayJobStore(pool=FakePool()).save(job)
+        assert captured["args"][7] == 100.0
+        assert captured["args"][9] == 3
