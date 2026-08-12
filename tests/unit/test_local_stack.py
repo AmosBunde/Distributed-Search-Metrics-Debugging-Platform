@@ -204,3 +204,50 @@ def test_service_packages_have_distinct_names() -> None:
 
     assert "app" not in packages, "a service package named `app` will collide"
     assert len(packages) == len(set(packages)), f"duplicate service packages: {packages}"
+
+
+class TestContinuousIntegration:
+    """CI is only useful if it runs the same checks a developer runs locally."""
+
+    @pytest.fixture(scope="class")
+    def ci(self) -> dict:
+        return yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+
+    def test_the_pipeline_lints_tests_and_builds(self, ci: dict) -> None:
+        assert {"lint", "unit-tests", "dashboard", "images", "integration"} <= set(ci["jobs"])
+
+    def test_the_coverage_gate_matches_the_makefile(self, ci: dict) -> None:
+        """A threshold CI enforces but `make coverage` does not is a trap."""
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        assert f"COVERAGE_MIN ?= {ci['env']['COVERAGE_MIN']}" in makefile
+
+    def test_every_service_image_is_built(self, ci: dict) -> None:
+        built = set(ci["jobs"]["images"]["strategy"]["matrix"]["service"])
+        services = {
+            path.name for path in (ROOT / "services").iterdir() if (path / "Dockerfile").is_file()
+        }
+        assert services <= built, f"images never built in CI: {services - built}"
+
+    def test_permissions_are_least_privilege(self, ci: dict) -> None:
+        assert ci["permissions"] == {"contents": "read"}
+
+    def test_in_flight_runs_are_superseded(self, ci: dict) -> None:
+        assert ci["concurrency"]["cancel-in-progress"] is True
+
+    def test_the_integration_job_waits_for_the_cheap_ones(self, ci: dict) -> None:
+        assert set(ci["jobs"]["integration"]["needs"]) == {"lint", "unit-tests"}
+
+    def test_the_integration_job_captures_logs_on_failure(self, ci: dict) -> None:
+        """A red CI run with no logs costs another round trip to diagnose."""
+        steps = ci["jobs"]["integration"]["steps"]
+        assert any(step.get("if") == "failure()" and "logs" in str(step) for step in steps)
+
+    def test_release_publishes_every_service(self) -> None:
+        release = yaml.safe_load(
+            (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        )
+        built = set(release["jobs"]["publish"]["strategy"]["matrix"]["service"])
+        services = {
+            path.name for path in (ROOT / "services").iterdir() if (path / "Dockerfile").is_file()
+        }
+        assert services <= built
