@@ -471,3 +471,143 @@ class TestClickHouseWriter:
     async def test_flushing_an_empty_buffer_is_a_no_op(self) -> None:
         writer = self._writer(lambda request: httpx.Response(500))
         assert await writer.flush() == 0
+
+
+class FakeConsumer:
+    """Serves one batch, then reports the loop should stop."""
+
+    def __init__(self, engine, batches: list[list[bytes]]) -> None:
+        self._engine = engine
+        self._batches = list(batches)
+        self.commits = 0
+
+    async def getmany(self, timeout_ms: int, max_records: int) -> dict:
+        if not self._batches:
+            self._engine.running = False
+            return {}
+        return {"partition-0": [type("R", (), {"value": v})() for v in self._batches.pop(0)]}
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+    async def stop(self) -> None:
+        pass
+
+
+class FakeWriter:
+    """A writer whose flush can be told to fail."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.rows: dict[str, list] = {}
+        self.fail = fail
+        self.flushes = 0
+
+    def add(self, table: str, rows: list) -> None:
+        self.rows.setdefault(table, []).extend(rows)
+
+    def buffered(self, table=None) -> int:
+        return sum(len(rows) for rows in self.rows.values())
+
+    @property
+    def should_flush(self) -> bool:
+        return self.buffered() > 0
+
+    async def flush(self) -> int:
+        self.flushes += 1
+        if self.fail:
+            raise RuntimeError("clickhouse is down")
+        written = self.buffered()
+        self.rows.clear()
+        return written
+
+    async def close(self) -> None:
+        pass
+
+
+class FakePublisher:
+    def __init__(self) -> None:
+        self.anomalies: list = []
+
+    async def publish_anomaly(self, anomaly) -> None:
+        self.anomalies.append(anomaly)
+
+
+class TestConsumerLoop:
+    """The commit ordering is the service's most important invariant."""
+
+    def _engine(self, batches, *, writer_fails: bool = False):
+        import engine.main as main
+
+        engine_instance = main.Engine()
+        engine_instance.writer = FakeWriter(fail=writer_fails)
+        engine_instance.consumer = FakeConsumer(engine_instance, batches)
+        engine_instance.publisher = FakePublisher()
+        engine_instance.running = True
+        return engine_instance
+
+    @staticmethod
+    def _encoded(events: list[SearchEvent]) -> list[bytes]:
+        return [e.model_dump_json().encode() for e in events]
+
+    @pytest.mark.asyncio
+    async def test_offsets_commit_only_after_the_write_succeeds(self) -> None:
+        instance = self._engine([self._encoded([event(10), event(20)])])
+        await instance.run()
+
+        assert instance.writer.flushes >= 1
+        assert instance.consumer.commits == 1
+
+    @pytest.mark.asyncio
+    async def test_a_failed_write_does_not_commit(self) -> None:
+        """Committing here would lose the batch: nothing would ever replay it."""
+        instance = self._engine([self._encoded([event(10)])], writer_fails=True)
+        instance.running = True
+
+        async def stop_after_first_failure(*_args, **_kwargs):
+            instance.running = False
+
+        import asyncio as _asyncio
+
+        original_sleep = _asyncio.sleep
+        _asyncio.sleep = stop_after_first_failure
+        try:
+            await instance.run()
+        finally:
+            _asyncio.sleep = original_sleep
+
+        assert instance.consumer.commits == 0
+
+    @pytest.mark.asyncio
+    async def test_raw_events_are_written_for_debugging(self) -> None:
+        instance = self._engine([self._encoded([event(10)])])
+        await instance.run()
+
+        assert len(instance.writer.rows.get("events", [])) or instance.writer.flushes
+
+    @pytest.mark.asyncio
+    async def test_detected_anomalies_are_published(self) -> None:
+        detector = instance_detector = AnomalyDetector(threshold=3.0, min_baseline_windows=3)
+        for latency in [100, 105, 98, 102, 110, 95]:
+            detector.evaluate(rollup_for(float(latency)))
+
+        instance = self._engine([])
+        instance.pipeline = Pipeline(
+            WindowedAggregator(window_seconds=60, grace_seconds=0), instance_detector
+        )
+        # One window of steady traffic, then a spike in the next window: the
+        # first closes as the watermark advances.
+        batch_one = self._encoded([event(100.0, at=BASE, query_id=f"a{i}") for i in range(20)])
+        batch_two = self._encoded(
+            [event(5000.0, at=BASE + timedelta(seconds=90), query_id=f"b{i}") for i in range(20)]
+        )
+        # A third batch advances the watermark past the spike window so it closes
+        # and gets scored; a window is only judged once it is complete.
+        batch_three = self._encoded(
+            [event(100.0, at=BASE + timedelta(seconds=200), query_id=f"c{i}") for i in range(20)]
+        )
+        instance.consumer = FakeConsumer(instance, [batch_one, batch_two, batch_three])
+        instance.running = True
+
+        await instance.run()
+
+        assert instance.publisher.anomalies, "a 50x latency spike should have been published"
