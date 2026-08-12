@@ -1,0 +1,41 @@
+# AWS: EKS, MSK, RDS, ElastiCache, ECR.
+#
+# Only the things that genuinely differ per cloud (ADR-0005): registry, ingress,
+# cloud identity and managed-service endpoints. Replace the placeholder
+# endpoints with your Terraform outputs.
+
+image:
+  registry: 123456789012.dkr.ecr.us-east-1.amazonaws.com/search-metrics
+
+dependencies:
+  kafka:
+    # terraform output -raw msk_bootstrap_brokers
+    bootstrapServers: b-1.searchmetrics.abc123.c2.kafka.us-east-1.amazonaws.com:9092
+  clickhouse:
+    host: clickhouse.search-metrics.internal
+  postgres:
+    host: search-metrics.abc123.us-east-1.rds.amazonaws.com
+  redis:
+    host: search-metrics.abc123.ng.0001.use1.cache.amazonaws.com
+
+serviceAccount:
+  annotations:
+    # IRSA: the pods assume this role rather than carrying static credentials.
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/search-metrics-irsa
+
+ingress:
+  className: alb
+  host: search-metrics.example.com
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+
+serviceMonitor:
+  enabled: true
+
+nodeSelector:
+  eks.amazonaws.com/capacityType: ON_DEMAND

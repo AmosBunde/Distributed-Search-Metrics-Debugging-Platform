@@ -143,8 +143,8 @@ build: ## Build container images for every service
 	$(COMPOSE) build
 
 .PHONY: build-push
-build-push: ## Build and push images to your cloud registry
-	$(call not_implemented,13)
+build-push: ## Build and push images to your cloud registry (see helm/README.md)
+	@bash scripts/build_push.sh
 
 # --- Housekeeping -----------------------------------------------------------
 

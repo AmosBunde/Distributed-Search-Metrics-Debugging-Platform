@@ -1,0 +1,24 @@
+{{ .Chart.Name }} {{ .Chart.Version }} deployed as {{ .Release.Name }} in {{ .Release.Namespace }}.
+
+Images:   {{ .Values.image.registry }}/*:{{ .Values.image.tag }}
+Kafka:    {{ .Values.dependencies.kafka.bootstrapServers | default "NOT SET" }}
+ClickHouse: {{ .Values.dependencies.clickhouse.host | default "NOT SET" }}
+
+Check the rollout:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/part-of=search-metrics
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=engine --tail=50
+
+{{ if .Values.ingress.enabled -}}
+The dashboard is at http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}
+and the API at http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/api/v1
+{{- else -}}
+No ingress is enabled. Reach the gateway with:
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "search-metrics.fullname" . }}-gateway {{ .Values.gateway.port }}
+{{- end }}
+
+{{ if not .Values.dependencies.kafka.bootstrapServers -}}
+WARNING: no Kafka bootstrap servers are configured. Ingest will not work.
+Set dependencies.kafka.bootstrapServers from your Terraform outputs.
+{{- end }}

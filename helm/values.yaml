@@ -1,0 +1,182 @@
+# Defaults for the search metrics platform.
+#
+# Cloud-specific values live in values-aws.yaml, values-azure.yaml and
+# values-gcp.yaml, and differ only in registry, storage class, ingress
+# annotations and managed-service endpoints (ADR-0005). Everything about how the
+# application behaves is here, so behaviour cannot drift between clouds.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ghcr.io/amosbunde/distributed-search-metrics-debugging-platform
+  # Always set explicitly at deploy time. `latest` makes a rollback ambiguous
+  # and a rolling restart non-deterministic, so there is no default.
+  tag: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+environment: production
+logLevel: INFO
+
+# --- Application configuration ---------------------------------------------
+config:
+  windowSeconds: 60
+  anomalyZScoreThreshold: "3.0"
+  anomalyBaselineWindows: 30
+  clickhouseInsertBatchSize: 1000
+  clickhouseInsertIntervalSeconds: "5"
+  maxBatchSize: 500
+  rateLimit:
+    enabled: true
+    requestsPerMinute: 60000
+    burst: 6000
+  topics:
+    events: search.events
+    results: search.results
+    errors: search.errors
+    anomalies: search.anomalies
+    spans: search.spans
+  tracing:
+    endpoint: http://opentelemetry-collector:4317
+    samplerArg: "0.1"
+
+# --- Managed dependencies ---------------------------------------------------
+# Endpoints only: the chart never provisions these. Terraform does (ADR-0005).
+dependencies:
+  kafka:
+    bootstrapServers: ""
+  clickhouse:
+    host: ""
+    port: 8123
+    database: search_metrics
+    user: search
+  postgres:
+    host: ""
+    port: 5432
+    database: search_metrics_meta
+    user: search
+  redis:
+    host: ""
+    port: 6379
+
+# Passwords come from a Secret that already exists in the namespace; the chart
+# never renders one, so a credential cannot end up in a values file or in
+# `helm get values` output.
+existingSecret: search-metrics-credentials
+
+# --- Workloads --------------------------------------------------------------
+collector:
+  enabled: true
+  replicaCount: 3
+  port: 8001
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: "1", memory: 512Mi }
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 30
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+engine:
+  enabled: true
+  # Scaled by hand: parallelism is bounded by Kafka partition count, so an HPA
+  # would add pods that simply idle (ADR-0003).
+  replicaCount: 3
+  port: 8002
+  resources:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits: { cpu: "2", memory: 2Gi }
+  autoscaling:
+    enabled: false
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+debug:
+  enabled: true
+  replicaCount: 2
+  port: 8003
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: "1", memory: 1Gi }
+  autoscaling:
+    enabled: false
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  # Replay makes an outbound request to a name the caller can influence, so the
+  # allowlist is deployment configuration, not a code constant.
+  allowedReplayTargets: "search-api,ranking-service,index-service,suggest-service"
+
+gateway:
+  enabled: true
+  replicaCount: 2
+  port: 8000
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: "1", memory: 512Mi }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  corsOrigins: ""
+
+dashboard:
+  enabled: true
+  replicaCount: 2
+  port: 8080
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+  autoscaling:
+    enabled: false
+  podDisruptionBudget:
+    enabled: false
+
+# --- Ingress ----------------------------------------------------------------
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  host: search-metrics.example.com
+  tls:
+    enabled: true
+    secretName: search-metrics-tls
+
+# --- Platform ---------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+nodeSelector: {}
+tolerations: []
+# Spread replicas across zones so losing one does not take a service with it.
+topologySpreadEnabled: true

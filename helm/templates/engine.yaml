@@ -1,0 +1,14 @@
+{{- include "search-metrics.workload" (dict
+    "root" .
+    "name" "engine"
+    "service" "metrics-engine"
+    "config" .Values.engine
+    "probes" true
+    "extraEnv" (list
+      (dict "name" "WINDOW_SECONDS" "value" (printf "%v" .Values.config.windowSeconds))
+      (dict "name" "ANOMALY_ZSCORE_THRESHOLD" "value" (printf "%v" .Values.config.anomalyZScoreThreshold))
+      (dict "name" "ANOMALY_BASELINE_WINDOWS" "value" (printf "%v" .Values.config.anomalyBaselineWindows))
+      (dict "name" "CLICKHOUSE_INSERT_BATCH_SIZE" "value" (printf "%v" .Values.config.clickhouseInsertBatchSize))
+      (dict "name" "CLICKHOUSE_INSERT_INTERVAL_SECONDS" "value" (printf "%v" .Values.config.clickhouseInsertIntervalSeconds))
+    )
+) }}

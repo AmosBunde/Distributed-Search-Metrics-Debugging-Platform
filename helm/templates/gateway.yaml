@@ -1,0 +1,12 @@
+{{- include "search-metrics.workload" (dict
+    "root" .
+    "name" "gateway"
+    "service" "api-gateway"
+    "config" .Values.gateway
+    "probes" true
+    "extraEnv" (list
+      (dict "name" "COLLECTOR_URL" "value" (printf "http://%s-collector:%v" (include "search-metrics.fullname" .) .Values.collector.port))
+      (dict "name" "DEBUG_SERVICE_URL" "value" (printf "http://%s-debug:%v" (include "search-metrics.fullname" .) .Values.debug.port))
+      (dict "name" "CORS_ORIGINS" "value" .Values.gateway.corsOrigins)
+    )
+) }}

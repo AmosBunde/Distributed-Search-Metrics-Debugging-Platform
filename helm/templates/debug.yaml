@@ -1,0 +1,10 @@
+{{- include "search-metrics.workload" (dict
+    "root" .
+    "name" "debug"
+    "service" "debug-service"
+    "config" .Values.debug
+    "probes" true
+    "extraEnv" (list
+      (dict "name" "REPLAY_ALLOWED_TARGETS" "value" .Values.debug.allowedReplayTargets)
+    )
+) }}
