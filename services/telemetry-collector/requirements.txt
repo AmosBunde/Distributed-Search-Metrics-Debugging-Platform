@@ -1,0 +1,6 @@
+# Runtime dependencies. The shared library is installed from ../../libs/common.
+fastapi==0.115.4
+uvicorn[standard]==0.32.0
+prometheus-client==0.21.0
+redis==5.2.0
+opentelemetry-instrumentation-fastapi==0.65b0
