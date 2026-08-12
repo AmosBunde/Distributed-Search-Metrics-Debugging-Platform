@@ -17,10 +17,12 @@ PYTHON ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 PYTEST ?= $(PYTHON) -m pytest
 SERVICES := telemetry-collector metrics-engine debug-service api-gateway query-simulator
 
-# Load .env when present so targets can use its values.
+# Load .env when present so targets can interpolate its values (ports, hosts).
+# Deliberately NOT exported: docker compose reads .env by itself, and exporting
+# would leak local configuration into every child process — including the test
+# suite, which must run against known defaults.
 ifneq (,$(wildcard .env))
 include .env
-export
 endif
 
 QPS ?= 100
