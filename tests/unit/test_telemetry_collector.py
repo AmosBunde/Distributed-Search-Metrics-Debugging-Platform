@@ -52,6 +52,11 @@ class RecordingPublisher:
         if event.results:
             self.results.append(event)
 
+    async def publish_events(self, events) -> None:
+        for event in events:
+            await self.publish_event(event)
+            await self.publish_results(event)
+
 
 class TestEnrichment:
     def test_receive_time_is_recorded_separately_from_the_caller_timestamp(self) -> None:

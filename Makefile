@@ -90,7 +90,12 @@ check-metrics: ## Show recent row counts in ClickHouse
 
 .PHONY: simulate
 simulate: ## Generate search traffic (QPS=500 SCENARIO=error_spike DURATION=60)
-	$(call not_implemented,9)
+	$(COMPOSE) run --rm --build query-simulator \
+		--qps $(QPS) --scenario $(SCENARIO) --duration $(DURATION)
+
+.PHONY: scenarios
+scenarios: ## List the available traffic scenarios
+	$(COMPOSE) run --rm --build query-simulator --list
 
 # --- Tests ------------------------------------------------------------------
 

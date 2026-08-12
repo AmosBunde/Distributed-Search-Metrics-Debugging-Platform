@@ -77,6 +77,8 @@ class Engine:
         topics = [
             settings.topic_name(Topic.EVENTS),
             settings.topic_name(Topic.ERRORS),
+            # Per-document results feed the debug service's replay diffing.
+            settings.topic_name(Topic.RESULTS),
         ]
         self.consumer = build_consumer(settings, topics, group_id=settings.kafka_consumer_group)
         self.producer = build_producer(settings)
@@ -129,6 +131,7 @@ class Engine:
                 self.writer.add(
                     "anomalies", [anomaly_row(anomaly) for anomaly in outcome.anomalies]
                 )
+                self.writer.add("query_results", outcome.results)
 
                 if self.writer.should_flush or outcome.rollups:
                     with FLUSH_DURATION.time():

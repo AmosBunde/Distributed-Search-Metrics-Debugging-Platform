@@ -304,6 +304,18 @@ services:
       DEBUG_SERVICE_URL: http://debug-service:8003
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
 
+  query-simulator:
+    build:
+      context: .
+      dockerfile: services/query-simulator/Dockerfile
+    container_name: search-metrics-simulator
+    profiles: ["tools"]        # never starts with `make dev`; run it on demand
+    depends_on:
+      telemetry-collector: { condition: service_healthy }
+    environment:
+      COLLECTOR_URL: http://telemetry-collector:8001
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
 volumes:
   kafka-data:
   clickhouse-data:

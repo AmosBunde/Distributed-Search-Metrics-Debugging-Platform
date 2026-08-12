@@ -56,8 +56,8 @@ async def ingest_events(
     shipping a thousand events an hour should not lose the other 999 because of
     one bad record.
     """
-    accepted = 0
     errors: list[str] = []
+    valid: list[SearchEvent] = []
 
     for index, raw in enumerate(raw_events):
         try:
@@ -65,11 +65,14 @@ async def ingest_events(
         except ValidationError as exc:
             errors.append(_describe(index, exc))
             continue
+        valid.append(enrich(event, received_at))
 
-        enriched = enrich(event, received_at)
-        await publisher.publish_event(enriched)
-        await publisher.publish_results(enriched)
-        accepted += 1
+    if valid:
+        # One pipelined publish for the whole batch: publishing event by event
+        # makes every message wait out the producer's linger in turn.
+        await publisher.publish_events(valid)
+
+    accepted = len(valid)
 
     if errors:
         logger.warning(

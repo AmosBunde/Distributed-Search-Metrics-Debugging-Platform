@@ -15,7 +15,7 @@ The defaults are not arbitrary and should not be overridden casually:
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -105,6 +105,46 @@ class EventPublisher:
     async def publish_event(self, event: SearchEvent) -> None:
         """Route by status: failures to the errors topic, successes to events."""
         await self.publish(event.topic, event.partition_key, event)
+
+    async def publish_events(self, events: Iterable[SearchEvent]) -> None:
+        """Publish a batch, pipelining the sends.
+
+        Awaiting each send individually is what makes a 500-event batch take
+        seconds: every message waits out the producer's linger before the next
+        one is even queued. Handing all of them to the producer first and then
+        waiting for the acknowledgements lets one linger window cover the whole
+        batch, which is the difference between tens and thousands of events per
+        second.
+        """
+        pending = []
+        for event in events:
+            pending.append(
+                await self._producer.send(
+                    self._settings.topic_name(event.topic),
+                    value=serialize(event),
+                    key=event.partition_key.encode("utf-8"),
+                    headers=inject_trace_context(),
+                )
+            )
+            if event.results:
+                pending.append(
+                    await self._producer.send(
+                        self._settings.topic_name(Topic.RESULTS),
+                        value=serialize(
+                            {
+                                "query_id": event.query_id,
+                                "service": event.service,
+                                "timestamp": event.timestamp,
+                                "results": [result.model_dump() for result in event.results],
+                            }
+                        ),
+                        key=event.partition_key.encode("utf-8"),
+                        headers=inject_trace_context(),
+                    )
+                )
+
+        for future in pending:
+            await future
 
     async def publish_results(self, event: SearchEvent) -> None:
         """Publish the per-document results of a query, if it carried any."""

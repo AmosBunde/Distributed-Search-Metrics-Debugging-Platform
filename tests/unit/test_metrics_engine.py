@@ -611,3 +611,61 @@ class TestConsumerLoop:
         await instance.run()
 
         assert instance.publisher.anomalies, "a 50x latency spike should have been published"
+
+
+class TestResultsRecords:
+    """One consumer group reads three topics, so records are routed by shape."""
+
+    def _pipeline(self) -> Pipeline:
+        return Pipeline(
+            WindowedAggregator(window_seconds=60, grace_seconds=5),
+            AnomalyDetector(threshold=3.0, min_baseline_windows=5),
+        )
+
+    def test_a_results_record_becomes_query_result_rows(self) -> None:
+        outcome = self._pipeline().process_batch(
+            [
+                {
+                    "query_id": "q-1",
+                    "service": "search-api",
+                    "timestamp": "2026-08-12T10:00:00+00:00",
+                    "results": [
+                        {"document_id": "d1", "rank": 1, "score": 0.9},
+                        {"document_id": "d2", "rank": 2, "score": 0.7},
+                    ],
+                }
+            ]
+        )
+
+        assert len(outcome.results) == 2
+        assert outcome.results[0]["document_id"] == "d1"
+        assert outcome.results[0]["timestamp"] == "2026-08-12 10:00:00+00:00"[:23]
+        assert outcome.invalid == 0, "a results record is not an invalid event"
+
+    def test_results_records_are_not_counted_as_events(self) -> None:
+        """Without shape routing these would inflate the invalid-record metric."""
+        outcome = self._pipeline().process_batch(
+            [
+                {
+                    "query_id": "q-1",
+                    "service": "s",
+                    "timestamp": "2026-08-12T10:00:00+00:00",
+                    "results": [],
+                },
+                event(10).model_dump(mode="json"),
+            ]  # fmt: skip
+        )
+
+        assert (outcome.processed, outcome.invalid) == (1, 0)
+
+    def test_an_event_carrying_results_is_still_an_event(self) -> None:
+        outcome = self._pipeline().process_batch(
+            [
+                event(
+                    10,
+                    result_count=1,
+                    results=[{"document_id": "d1", "rank": 1, "score": 0.5}],
+                ).model_dump(mode="json")
+            ]
+        )
+        assert (outcome.processed, outcome.invalid) == (1, 0)
