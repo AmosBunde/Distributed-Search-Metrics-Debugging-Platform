@@ -1,0 +1,219 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push supersedes the run in flight: no point burning runners on a commit
+# nobody is waiting for any more.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '20'
+  COVERAGE_MIN: '80'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: ruff check
+        run: ruff check .
+
+      - name: ruff format
+        run: ruff format --check .
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          pip install -e libs/common
+          # Service dependencies: the unit tests import each service's package.
+          pip install -r services/telemetry-collector/requirements.txt \
+                      -r services/metrics-engine/requirements.txt \
+                      -r services/debug-service/requirements.txt \
+                      -r services/api-gateway/requirements.txt \
+                      -r services/query-simulator/requirements.txt
+
+      - name: Run unit tests with coverage
+        run: |
+          pytest tests/unit -q \
+            --cov --cov-report=term-missing --cov-report=xml \
+            --cov-fail-under=${{ env.COVERAGE_MIN }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.xml
+          retention-days: 7
+
+  dashboard:
+    name: Dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/dashboard/package-lock.json
+
+      - run: npm ci || npm install
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Component tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+  images:
+    name: Build images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - telemetry-collector
+          - metrics-engine
+          - debug-service
+          - api-gateway
+          - query-simulator
+          - dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: false
+          load: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  infrastructure:
+    name: Infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      # These checks are skipped until the directories exist, so the pipeline is
+      # green before the Terraform and Helm issues land rather than red for
+      # weeks.
+      - name: terraform fmt
+        run: |
+          if [ -d infrastructure/terraform ]; then
+            terraform fmt -check -recursive infrastructure/terraform
+          else
+            echo "no terraform yet — skipping"
+          fi
+
+      - name: terraform validate
+        run: |
+          shopt -s nullglob
+          found=0
+          for dir in infrastructure/terraform/environments/*/; do
+            found=1
+            echo "::group::validate $dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done
+          [ "$found" = 1 ] || echo "no terraform environments yet — skipping"
+
+      - name: helm lint
+        run: |
+          if [ -f helm/Chart.yaml ]; then
+            helm lint helm
+            for values in helm/values*.yaml; do
+              echo "::group::template with $values"
+              helm template search-metrics helm --values "$values" > /dev/null
+              echo "::endgroup::"
+            done
+          else
+            echo "no chart yet — skipping"
+          fi
+
+  integration:
+    name: Integration and e2e
+    runs-on: ubuntu-latest
+    # The heaviest job: only worth running once the cheap ones agree.
+    needs: [lint, unit-tests]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          pip install -e libs/common
+
+      - name: Start the stack
+        run: |
+          cp .env.example .env
+          make dev
+
+      - name: Integration tests
+        run: make test-integration
+
+      - name: End-to-end tests
+        run: make test-e2e
+
+      - name: Service logs
+        if: failure()
+        run: docker compose logs --tail=200
+
+      - name: Stop the stack
+        if: always()
+        run: make down

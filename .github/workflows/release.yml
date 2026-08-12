@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to publish'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - telemetry-collector
+          - metrics-engine
+          - debug-service
+          - api-gateway
+          - query-simulator
+          - dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags are derived from the git ref rather than interpolated into a shell
+      # command, so a crafted ref cannot become a command.
+      - name: Derive image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  summary:
+    name: Release summary
+    runs-on: ubuntu-latest
+    needs: publish
+    if: always()
+    steps:
+      - name: Report
+        env:
+          RESULT: ${{ needs.publish.result }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          {
+            echo "## Release $REF_NAME"
+            echo ""
+            echo "Image publication: **$RESULT**"
+            echo ""
+            echo "Deploy with:"
+            echo '```bash'
+            echo "helm upgrade --install search-metrics ./helm \\"
+            echo "  --namespace search-metrics --create-namespace \\"
+            echo "  --values helm/values-aws.yaml \\"
+            echo "  --set image.tag=$REF_NAME"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
