@@ -1,0 +1,33 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+#
+# Passwords are NOT set here. Supply them through the environment so they never
+# reach a file that could be committed:
+#
+#   export TF_VAR_db_password='…'
+#   export TF_VAR_clickhouse_password='…'
+
+aws_region   = "us-east-1"
+environment  = "dev"
+cluster_name = "search-metrics"
+
+vpc_cidr = "10.0.0.0/16"
+
+kubernetes_version  = "1.29"
+node_instance_types = ["m5.2xlarge"]
+node_min_size       = 3
+node_max_size       = 30
+
+kafka_broker_count  = 3
+kafka_instance_type = "kafka.m5.large"
+
+clickhouse_instance_count = 1
+clickhouse_instance_type  = "r5.2xlarge"
+clickhouse_volume_size_gb = 1000
+
+db_instance_class = "db.t4g.medium"
+redis_node_type   = "cache.t4g.medium"
+
+alert_emails = ["search-oncall@example.com"]
+
+# Leave empty to keep the Kubernetes API private to the VPC.
+eks_public_access_cidrs = []
