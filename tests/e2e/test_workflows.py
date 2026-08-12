@@ -244,6 +244,7 @@ class TestApiContract:
         for method, path in [
             ("post", "/api/v1/telemetry/event"),
             ("post", "/api/v1/telemetry/batch"),
+            ("post", "/api/v1/telemetry/spans"),
             ("get", "/api/v1/metrics/latency"),
             ("get", "/api/v1/metrics/relevance"),
             ("get", "/api/v1/metrics/errors"),

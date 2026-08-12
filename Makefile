@@ -52,7 +52,7 @@ help: ## List every target with a one-line description
 # --- Local stack -----------------------------------------------------------
 
 .PHONY: dev
-dev: .env ## Start the full local stack and wait for it to be healthy
+dev: .env check-ports ## Start the full local stack and wait for it to be healthy
 	$(COMPOSE) up -d --build --wait
 	@echo ""
 	@$(MAKE) --no-print-directory health
@@ -72,6 +72,10 @@ logs: ## Tail logs from every service (SERVICE=name for one)
 .PHONY: ps
 ps: ## Show the status of every container
 	$(COMPOSE) ps
+
+.PHONY: check-ports
+check-ports: ## Check that the host ports the stack needs are free
+	@bash scripts/check_ports.sh
 
 .PHONY: health
 health: ## Check that every service in the stack is up
@@ -149,12 +153,18 @@ build-push: ## Build and push images to your cloud registry (see helm/README.md)
 # --- Housekeeping -----------------------------------------------------------
 
 .PHONY: install-dev
-install-dev: ## Create .venv and install Python development dependencies
+install-dev: ## Create .venv and install everything the tests need
 	@test -d $(VENV) || python3 -m venv $(VENV)
 	@$(VENV)/bin/python -m pip install --quiet --upgrade pip
 	@$(VENV)/bin/python -m pip install --quiet -r requirements-dev.txt
+	@echo "Installing the shared library…"
+	@$(VENV)/bin/python -m pip install --quiet -e libs/common
+	@echo "Installing service dependencies…"
+	@$(VENV)/bin/python -m pip install --quiet \
+		$(foreach service,$(SERVICES),-r services/$(service)/requirements.txt)
+	@echo ""
 	@echo "Development environment ready: $(VENV)"
-	@echo "Activate it with: source $(VENV)/bin/activate"
+	@echo "Run the tests with: make test-unit"
 
 .PHONY: clean
 clean: ## Remove caches, coverage output and build artifacts
