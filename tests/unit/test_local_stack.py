@@ -48,6 +48,7 @@ EXPECTED_SERVICES = {
     "grafana",
     "telemetry-collector",
     "metrics-engine",
+    "debug-service",
 }
 
 
