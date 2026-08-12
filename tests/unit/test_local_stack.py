@@ -251,3 +251,84 @@ class TestContinuousIntegration:
             path.name for path in (ROOT / "services").iterdir() if (path / "Dockerfile").is_file()
         }
         assert services <= built
+
+
+class TestHelmChart:
+    """The chart is rendered by CI; these assert the properties that matter.
+
+    Rendering is verified in CI with `helm template`; this checks the promises
+    that a successful render would not catch on its own.
+    """
+
+    CHART = ROOT / "helm"
+
+    @pytest.fixture(scope="class")
+    def values(self) -> dict:
+        return yaml.safe_load((self.CHART / "values.yaml").read_text(encoding="utf-8"))
+
+    def test_there_is_a_values_file_per_cloud(self) -> None:
+        for cloud in ("aws", "azure", "gcp"):
+            assert (self.CHART / f"values-{cloud}.yaml").is_file()
+
+    def test_no_image_tag_default(self, values: dict) -> None:
+        """A chart that falls back to `latest` makes a rollback ambiguous."""
+        assert values["image"]["tag"] == ""
+        helpers = (self.CHART / "templates" / "_helpers.tpl").read_text(encoding="utf-8")
+        assert "image.tag is required" in helpers
+
+    def test_no_passwords_anywhere_in_the_chart(self) -> None:
+        """Credentials come from an existing Secret, never from a values file."""
+        for path in self.CHART.rglob("*.yaml"):
+            text = path.read_text(encoding="utf-8")
+            for line in text.splitlines():
+                if "password:" in line.lower() and "secretKeyRef" not in text[: text.index(line)]:
+                    assert "Password" in line or line.strip().endswith(
+                        ("password:", '""')
+                    ), f"{path.name}: possible inline credential — {line.strip()}"
+
+    def test_credentials_come_from_an_existing_secret(self, values: dict) -> None:
+        assert values["existingSecret"]
+        helpers = (self.CHART / "templates" / "_helpers.tpl").read_text(encoding="utf-8")
+        assert "secretKeyRef" in helpers
+        # The chart must not create a Secret of its own.
+        assert not (self.CHART / "templates" / "secret.yaml").exists()
+
+    def test_the_clouds_differ_only_in_deployment_specifics(self) -> None:
+        """Application behaviour must not drift between clouds (ADR-0005)."""
+        allowed = {
+            "image", "dependencies", "serviceAccount", "ingress", "serviceMonitor",
+            "nodeSelector", "tolerations", "collector", "engine", "debug", "gateway",
+            "dashboard",
+        }  # fmt: skip
+        for cloud in ("aws", "azure", "gcp"):
+            overrides = yaml.safe_load(
+                (self.CHART / f"values-{cloud}.yaml").read_text(encoding="utf-8")
+            )
+            unexpected = set(overrides) - allowed
+            assert (
+                not unexpected
+            ), f"values-{cloud}.yaml changes application behaviour: {unexpected}"
+
+            # Per-service overrides may only touch deployment shape.
+            for service in ("collector", "engine", "debug", "gateway", "dashboard"):
+                keys = set(overrides.get(service, {}))
+                assert keys <= {"resources", "replicaCount", "autoscaling", "podDisruptionBudget"}
+
+    def test_the_engine_is_not_autoscaled(self, values: dict) -> None:
+        """Parallelism is capped by partition count, so an HPA adds idle pods."""
+        assert values["engine"]["autoscaling"]["enabled"] is False
+        assert values["collector"]["autoscaling"]["enabled"] is True
+
+    def test_workloads_run_unprivileged_with_a_read_only_root(self, values: dict) -> None:
+        assert values["podSecurityContext"]["runAsNonRoot"] is True
+        assert values["securityContext"]["readOnlyRootFilesystem"] is True
+        assert values["securityContext"]["allowPrivilegeEscalation"] is False
+
+    def test_the_replay_allowlist_is_deployment_configuration(self, values: dict) -> None:
+        """The SSRF allowlist has to be settable per environment."""
+        assert values["debug"]["allowedReplayTargets"]
+
+    def test_the_ingress_routes_the_api_before_the_dashboard(self) -> None:
+        """A catch-all dashboard path first would swallow every API request."""
+        ingress = (self.CHART / "templates" / "ingress.yaml").read_text(encoding="utf-8")
+        assert ingress.index("path: /api") < ingress.index("path: /\n")

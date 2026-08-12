@@ -1,0 +1,31 @@
+# Azure: AKS, Event Hubs, PostgreSQL Flexible Server, Azure Cache, ACR.
+
+image:
+  registry: searchmetricsacr.azurecr.io/search-metrics
+
+dependencies:
+  kafka:
+    # Event Hubs speaks the Kafka protocol on 9093 with SASL over TLS.
+    bootstrapServers: search-metrics.servicebus.windows.net:9093
+  clickhouse:
+    host: clickhouse.search-metrics.internal
+  postgres:
+    host: search-metrics.postgres.database.azure.com
+  redis:
+    host: search-metrics.redis.cache.windows.net
+    port: 6380
+
+serviceAccount:
+  annotations:
+    # Workload identity: the same idea as IRSA, spelled differently.
+    azure.workload.identity/client-id: 00000000-0000-0000-0000-000000000000
+
+ingress:
+  className: azure-application-gateway
+  host: search-metrics.example.com
+  annotations:
+    appgw.ingress.kubernetes.io/ssl-redirect: "true"
+    appgw.ingress.kubernetes.io/health-probe-path: /health
+
+serviceMonitor:
+  enabled: true

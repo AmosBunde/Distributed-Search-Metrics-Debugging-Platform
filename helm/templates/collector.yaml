@@ -1,0 +1,13 @@
+{{- include "search-metrics.workload" (dict
+    "root" .
+    "name" "collector"
+    "service" "telemetry-collector"
+    "config" .Values.collector
+    "probes" true
+    "extraEnv" (list
+      (dict "name" "RATE_LIMIT_ENABLED" "value" (printf "%v" .Values.config.rateLimit.enabled))
+      (dict "name" "RATE_LIMIT_REQUESTS_PER_MINUTE" "value" (printf "%v" .Values.config.rateLimit.requestsPerMinute))
+      (dict "name" "RATE_LIMIT_BURST" "value" (printf "%v" .Values.config.rateLimit.burst))
+      (dict "name" "MAX_BATCH_SIZE" "value" (printf "%v" .Values.config.maxBatchSize))
+    )
+) }}

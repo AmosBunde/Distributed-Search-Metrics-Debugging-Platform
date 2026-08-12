@@ -1,0 +1,39 @@
+# GCP: GKE Autopilot, Pub/Sub via the Kafka connector, Cloud SQL, Memorystore.
+
+image:
+  registry: us-central1-docker.pkg.dev/my-project/search-metrics
+
+dependencies:
+  kafka:
+    bootstrapServers: kafka-connector.search-metrics.svc.cluster.local:9092
+  clickhouse:
+    host: clickhouse.search-metrics.internal
+  postgres:
+    # Cloud SQL through the auth proxy sidecar or a private IP.
+    host: 10.20.30.40
+  redis:
+    host: 10.20.30.50
+
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: search-metrics@my-project.iam.gserviceaccount.com
+
+ingress:
+  className: gce
+  host: search-metrics.example.com
+  annotations:
+    kubernetes.io/ingress.class: gce-internal
+    networking.gke.io/managed-certificates: search-metrics-cert
+
+serviceMonitor:
+  enabled: true
+
+# Autopilot schedules by request, and enforces limits >= requests.
+collector:
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+engine:
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: "2", memory: 2Gi }

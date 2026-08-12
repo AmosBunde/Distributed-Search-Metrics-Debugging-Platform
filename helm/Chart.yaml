@@ -1,0 +1,10 @@
+apiVersion: v2
+name: search-metrics
+description: Distributed search metrics collection, analysis and debugging platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [search, observability, metrics, tracing, debugging]
+home: https://github.com/AmosBunde/Distributed-Search-Metrics-Debugging-Platform
+maintainers:
+  - name: AmosBunde
