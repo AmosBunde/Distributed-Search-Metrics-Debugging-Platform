@@ -5,6 +5,9 @@ image:
 
 dependencies:
   kafka:
+    # Pub/Sub does not speak the Kafka protocol, so a connector bridges it.
+    # Deploy the connector before the platform, or ingest fails with connection
+    # errors that look like a networking problem and are not.
     bootstrapServers: kafka-connector.search-metrics.svc.cluster.local:9092
   clickhouse:
     host: clickhouse.search-metrics.internal

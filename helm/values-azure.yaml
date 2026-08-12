@@ -13,7 +13,9 @@ dependencies:
     host: search-metrics.postgres.database.azure.com
   redis:
     host: search-metrics.redis.cache.windows.net
+    # Azure Cache has no non-TLS port, so 6380 and tls are not optional.
     port: 6380
+    tls: true
 
 serviceAccount:
   annotations:
