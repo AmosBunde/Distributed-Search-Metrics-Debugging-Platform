@@ -560,3 +560,20 @@ class TestMetricCardinality:
 
         assert trace_series, "no series recorded for the traces route"
         assert not any("trace-a" in line for line in series), "a trace id leaked into a label"
+
+
+def test_the_gateway_serves_every_ingest_route_the_readme_documents() -> None:
+    """The README's API table sends people to the gateway, not the collector.
+
+    A documented route the gateway does not proxy is a 404 for an adopter who
+    followed the instructions exactly.
+    """
+    with client_with([]) as client:
+        paths = client.get("/openapi.json").json()["paths"]
+
+    for path in (
+        "/api/v1/telemetry/event",
+        "/api/v1/telemetry/batch",
+        "/api/v1/telemetry/spans",
+    ):
+        assert path in paths, f"{path} is documented but not served by the gateway"

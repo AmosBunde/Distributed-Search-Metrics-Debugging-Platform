@@ -363,6 +363,11 @@ async def ingest_batch(request: Request) -> Response:
     return await _proxy(request, "POST", COLLECTOR_URL, "/api/v1/telemetry/batch", "ingest_batch")
 
 
+@app.post("/api/v1/telemetry/spans", summary="Ingest trace spans")
+async def ingest_spans(request: Request) -> Response:
+    return await _proxy(request, "POST", COLLECTOR_URL, "/api/v1/telemetry/spans", "ingest_spans")
+
+
 @app.get("/health")
 async def health(request: Request) -> dict[str, Any]:
     cache: MetricsCache = request.app.state.cache
