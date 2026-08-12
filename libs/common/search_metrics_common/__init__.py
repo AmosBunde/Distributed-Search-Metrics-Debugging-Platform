@@ -15,6 +15,8 @@ from .models import (
     SearchResult,
     SearchStatus,
     Severity,
+    SpanBatch,
+    TraceSpan,
 )
 from .settings import Settings, get_settings
 from .topics import ALL_TOPICS, Topic
@@ -36,6 +38,8 @@ __all__ = [
     "SearchEventBatch",
     "SearchResult",
     "SearchStatus",
+    "SpanBatch",
+    "TraceSpan",
     "Settings",
     "Severity",
     "Topic",

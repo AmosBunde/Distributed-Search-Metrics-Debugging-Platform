@@ -25,6 +25,7 @@ ifneq (,$(wildcard .env))
 include .env
 endif
 
+COVERAGE_MIN ?= 80
 QPS ?= 100
 SCENARIO ?= baseline
 DURATION ?= 60
@@ -105,15 +106,16 @@ test-unit: ## Run unit tests (no infrastructure required)
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (requires: make dev)
-	$(call not_implemented,11)
+	$(PYTEST) tests/integration -v -m integration
 
 .PHONY: test-e2e
 test-e2e: ## Run end-to-end black-box tests (requires: make dev)
-	$(call not_implemented,11)
+	$(PYTEST) tests/e2e -v -m e2e
 
 .PHONY: coverage
 coverage: ## Run unit tests with coverage and write htmlcov/
-	$(PYTEST) tests/unit --cov --cov-report=term-missing --cov-report=html
+	$(PYTEST) tests/unit --cov --cov-report=term-missing --cov-report=html \
+		--cov-fail-under=$(COVERAGE_MIN)
 	@echo "HTML report: htmlcov/index.html"
 
 # --- Code quality -----------------------------------------------------------

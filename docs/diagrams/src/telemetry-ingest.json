@@ -182,7 +182,7 @@
       "id": "detected",
       "from": "engine",
       "to": "anomalies",
-      "label": "z-score > 3\u03c3",
+      "label": "z-score > 3σ",
       "classification": "derived",
       "variant": "dashed"
     }

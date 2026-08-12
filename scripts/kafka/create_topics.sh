@@ -15,7 +15,8 @@ for topic in \
     "${KAFKA_TOPIC_EVENTS:-search.events}" \
     "${KAFKA_TOPIC_RESULTS:-search.results}" \
     "${KAFKA_TOPIC_ERRORS:-search.errors}" \
-    "${KAFKA_TOPIC_ANOMALIES:-search.anomalies}"
+    "${KAFKA_TOPIC_ANOMALIES:-search.anomalies}" \
+    "${KAFKA_TOPIC_SPANS:-search.spans}"
 do
     echo "creating topic ${topic} (${PARTITIONS} partitions, retention ${RETENTION_MS}ms)"
     /opt/kafka/bin/kafka-topics.sh \

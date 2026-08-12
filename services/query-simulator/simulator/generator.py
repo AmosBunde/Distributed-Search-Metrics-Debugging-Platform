@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 import random
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .scenarios import SERVICE_LATENCY, SERVICES, Phase
@@ -128,3 +128,62 @@ def generate_batch(
     rng: random.Random, phase: Phase, size: int, timestamp: datetime | None = None
 ) -> list[dict[str, Any]]:
     return [generate_event(rng, phase, timestamp=timestamp) for _ in range(size)]
+
+
+#: Every search fans out through the same shape of call tree, which is what
+#: makes a trace worth looking at: the child spans are where the time goes.
+SPAN_TREE: tuple[tuple[str, str, float], ...] = (
+    ("search-api", "GET /search", 1.0),
+    ("ranking-service", "rank", 0.55),
+    ("index-service", "fetch_shards", 0.35),
+    ("suggest-service", "suggest", 0.08),
+)
+
+
+def generate_spans(rng: random.Random, event: dict[str, Any]) -> list[dict[str, Any]]:
+    """A small trace for one event, with the time split across the call tree.
+
+    Durations are apportioned from the event's own latency rather than invented,
+    so the trace explains the number the metrics already reported. A failed
+    query's error lands on the deepest span, which is where a real failure
+    usually originates.
+    """
+    trace_id = uuid.uuid4().hex
+    root_id = uuid.uuid4().hex[:16]
+    start = datetime.fromisoformat(event["timestamp"])
+    total = float(event["latency_ms"])
+    failed = event["status"] != "ok"
+
+    spans: list[dict[str, Any]] = []
+    parent = ""
+    span_id = root_id
+    offset_ms = 0.0
+
+    for depth, (service, operation, share) in enumerate(SPAN_TREE):
+        duration = round(total * share, 3)
+        is_leaf = depth == len(SPAN_TREE) - 1
+
+        spans.append(
+            {
+                "trace_id": trace_id,
+                "span_id": span_id,
+                "parent_span_id": parent,
+                "query_id": event["query_id"],
+                "service": service,
+                "operation": operation,
+                "start_time": (start + timedelta(milliseconds=offset_ms)).isoformat(),
+                "duration_ms": duration,
+                "status": "error" if failed and is_leaf else "ok",
+                "attributes": {
+                    "cache.hit": str(bool(event.get("cache_hit"))).lower(),
+                    **({"error.message": event["error_message"]} if failed and is_leaf else {}),
+                },
+            }
+        )
+
+        parent = span_id
+        span_id = uuid.uuid4().hex[:16]
+        offset_ms += duration * 0.15
+
+    event["trace_id"] = trace_id
+    return spans

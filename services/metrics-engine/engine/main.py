@@ -79,6 +79,8 @@ class Engine:
             settings.topic_name(Topic.ERRORS),
             # Per-document results feed the debug service's replay diffing.
             settings.topic_name(Topic.RESULTS),
+            # Spans feed its trace assembly.
+            settings.topic_name(Topic.SPANS),
         ]
         self.consumer = build_consumer(settings, topics, group_id=settings.kafka_consumer_group)
         self.producer = build_producer(settings)
@@ -132,6 +134,7 @@ class Engine:
                     "anomalies", [anomaly_row(anomaly) for anomaly in outcome.anomalies]
                 )
                 self.writer.add("query_results", outcome.results)
+                self.writer.add("spans", outcome.spans)
 
                 if self.writer.should_flush or outcome.rollups:
                     with FLUSH_DURATION.time():

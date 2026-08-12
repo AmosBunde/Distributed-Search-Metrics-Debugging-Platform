@@ -180,6 +180,51 @@ class AnomalyEvent(PlatformModel):
         return f"{self.service}:{self.metric}:{self.severity}"
 
 
+class TraceSpan(PlatformModel):
+    """One operation in one service, as reported by an instrumented caller.
+
+    Spans reach the platform the same way events do — over HTTP, through Kafka —
+    so that an adopter has one ingest path to point their services at rather
+    than two. In a deployment that already runs an OpenTelemetry collector, the
+    same records can be written from there instead.
+    """
+
+    trace_id: str = Field(min_length=1, max_length=64)
+    span_id: str = Field(min_length=1, max_length=32)
+    parent_span_id: str = Field(default="", max_length=32)
+    query_id: str = Field(default="", max_length=128)
+
+    service: str = Field(min_length=1, max_length=64)
+    operation: str = Field(min_length=1, max_length=128)
+    start_time: datetime
+    duration_ms: float = Field(ge=0, le=MAX_LATENCY_MS)
+    status: str = Field(default="ok", max_length=32)
+    attributes: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("start_time")
+    @classmethod
+    def _require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("start_time must be timezone-aware")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def _reject_self_parent(self) -> TraceSpan:
+        """A span that is its own parent makes the trace tree cyclic."""
+        if self.parent_span_id and self.parent_span_id == self.span_id:
+            raise ValueError("a span cannot be its own parent")
+        return self
+
+    @property
+    def partition_key(self) -> str:
+        """Keyed by trace so one trace's spans stay on one partition."""
+        return self.trace_id
+
+
+class SpanBatch(PlatformModel):
+    spans: list[TraceSpan] = Field(min_length=1, max_length=MAX_BATCH_SIZE)
+
+
 class IngestResult(PlatformModel):
     """What the collector reports back for one ingest call."""
 
