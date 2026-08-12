@@ -1,0 +1,46 @@
+[project]
+name = "search-metrics-platform"
+version = "0.1.0"
+description = "Distributed search metrics collection, analysis and debugging platform"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["services/dashboard", "infrastructure", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "C4", "SIM", "RUF"]
+ignore = [
+    "B008",   # FastAPI uses function calls (Depends/Query) in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests/unit"]
+addopts = "-ra --strict-markers"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: requires the local stack (make dev)",
+    "e2e: full black-box workflow against a running stack",
+]
+filterwarnings = ["error::DeprecationWarning:search_metrics_common.*"]
+
+[tool.coverage.run]
+branch = true
+source = ["libs", "services"]
+omit = ["*/tests/*", "*/__main__.py", "services/dashboard/*"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
