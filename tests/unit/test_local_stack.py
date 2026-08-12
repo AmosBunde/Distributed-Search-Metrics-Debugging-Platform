@@ -51,6 +51,7 @@ EXPECTED_SERVICES = {
     "debug-service",
     "api-gateway",
     "query-simulator",
+    "dashboard",
 }
 
 

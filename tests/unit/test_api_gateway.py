@@ -470,3 +470,45 @@ async def test_counts_are_returned_as_numbers_not_strings() -> None:
     await queries_returning([], capture).summary(WINDOW)
 
     assert capture["params"]["output_format_json_quote_64bit_integers"] == "0"
+
+
+class TestAliasShadowing:
+    """ClickHouse resolves SELECT aliases inside WHERE.
+
+    `toString(timestamp) AS timestamp` therefore makes an unqualified
+    `WHERE timestamp BETWEEN …` compare a String to a DateTime, which fails with
+    NO_COMMON_TYPE at query time — a 503 that only appears against a real
+    ClickHouse.
+    """
+
+    @pytest.mark.asyncio
+    async def test_slowest_queries_filters_a_qualified_column(self) -> None:
+        capture: dict = {}
+        await queries_returning([], capture).slowest_queries(WINDOW)
+
+        assert "events.timestamp BETWEEN" in capture["sql"]
+
+    @pytest.mark.asyncio
+    async def test_anomalies_filters_a_qualified_column(self) -> None:
+        capture: dict = {}
+        await queries_returning([], capture).anomalies(WINDOW)
+
+        assert "anomalies.window_start BETWEEN" in capture["sql"]
+
+    def test_no_query_filters_on_a_column_its_own_alias_shadows(self) -> None:
+        """A guard for queries added later, checked per method rather than per file.
+
+        Alias scope is per query, so each method is inspected on its own.
+        """
+        import inspect
+        import re
+
+        from gateway.queries import MetricsQueries
+
+        for name, method in inspect.getmembers(MetricsQueries, inspect.isfunction):
+            source = inspect.getsource(method)
+            shadowed = set(re.findall(r"toString\((\w+)\)\s+AS\s+\1", source))
+            for column in shadowed:
+                assert not re.search(
+                    rf"WHERE {column}\b", source
+                ), f"{name}: WHERE {column} resolves to its own String alias"
