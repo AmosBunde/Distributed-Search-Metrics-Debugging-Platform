@@ -1,0 +1,44 @@
+# Prometheus scrape configuration for the local stack.
+#
+# Every platform service exposes /metrics. Targets for services that are not
+# running yet are listed anyway: Prometheus reports them as down, which is more
+# useful than pretending they do not exist.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: local
+    platform: search-metrics
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: telemetry-collector
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["telemetry-collector:8001"]
+        labels: { service: telemetry-collector }
+
+  - job_name: metrics-engine
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["metrics-engine:8002"]
+        labels: { service: metrics-engine }
+
+  - job_name: debug-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["debug-service:8003"]
+        labels: { service: debug-service }
+
+  - job_name: api-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api-gateway:8000"]
+        labels: { service: api-gateway }

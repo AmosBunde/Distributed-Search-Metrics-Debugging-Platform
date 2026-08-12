@@ -48,32 +48,44 @@ help: ## List every target with a one-line description
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 
-# --- Local stack (issue #5) -------------------------------------------------
+# --- Local stack -----------------------------------------------------------
 
 .PHONY: dev
-dev: ## Start the full local stack and wait for it to be healthy
-	$(call not_implemented,5)
+dev: .env ## Start the full local stack and wait for it to be healthy
+	$(COMPOSE) up -d --build --wait
+	@echo ""
+	@$(MAKE) --no-print-directory health
 
 .PHONY: down
 down: ## Stop the local stack and remove containers
-	$(call not_implemented,5)
+	$(COMPOSE) down --remove-orphans
+
+.PHONY: clean-volumes
+clean-volumes: ## Stop the stack and delete its data volumes
+	$(COMPOSE) down --remove-orphans --volumes
 
 .PHONY: logs
 logs: ## Tail logs from every service (SERVICE=name for one)
-	$(call not_implemented,5)
+	$(COMPOSE) logs -f --tail=100 $(SERVICE)
+
+.PHONY: ps
+ps: ## Show the status of every container
+	$(COMPOSE) ps
 
 .PHONY: health
 health: ## Check that every service in the stack is up
-	$(call not_implemented,5)
+	@bash scripts/health_check.sh
 
 .PHONY: check-kafka
 check-kafka: ## Show Kafka topics and consumer lag
-	$(call not_implemented,5)
+	@bash scripts/check_kafka.sh
 
 .PHONY: check-metrics
 check-metrics: ## Show recent row counts in ClickHouse
-	$(call not_implemented,5)
+	@bash scripts/check_metrics.sh
 
+.env: ## Create .env from the example if it does not exist
+	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example")
 # --- Traffic generation (issue #9) -----------------------------------------
 
 .PHONY: simulate
@@ -121,7 +133,7 @@ diagrams: ## Regenerate architecture diagrams from their specs (needs ARCHIFY_HO
 
 .PHONY: build
 build: ## Build container images for every service
-	$(call not_implemented,5)
+	$(COMPOSE) build
 
 .PHONY: build-push
 build-push: ## Build and push images to your cloud registry
