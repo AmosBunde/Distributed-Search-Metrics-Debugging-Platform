@@ -1,0 +1,405 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Search Metrics & Debugging Platform",
+    "subtitle": "Telemetry ingest, stream analysis and query debugging \u2014 end to end",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ingest-path",
+        "label": "Ingest path",
+        "focus": [
+          "simulator",
+          "collector",
+          "kafka",
+          "engine",
+          "clickhouse"
+        ],
+        "note": "Search events travel from the traffic source to durable analytics storage."
+      },
+      {
+        "id": "serving-path",
+        "label": "Serving path",
+        "focus": [
+          "clickhouse",
+          "gateway",
+          "redis",
+          "dashboard"
+        ],
+        "note": "How an operator's dashboard query is answered, and what is cached."
+      },
+      {
+        "id": "debug-path",
+        "label": "Debugging path",
+        "focus": [
+          "tracing",
+          "debug",
+          "metadb",
+          "gateway"
+        ],
+        "note": "Distributed traces feed root cause analysis and query replay."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "simulator",
+      "type": "external",
+      "label": "Query Simulator",
+      "sublabel": "traffic generator",
+      "pos": [
+        40,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "collector",
+      "type": "backend",
+      "label": "Telemetry Collector",
+      "sublabel": "FastAPI :8001",
+      "pos": [
+        290,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "validate + rate limit"
+    },
+    {
+      "id": "kafka",
+      "type": "messagebus",
+      "label": "Apache Kafka",
+      "sublabel": "4 event topics",
+      "pos": [
+        540,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Metrics Engine",
+      "sublabel": "windows + anomalies",
+      "pos": [
+        790,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "clickhouse",
+      "type": "database",
+      "label": "ClickHouse",
+      "sublabel": "OLAP :8123",
+      "pos": [
+        1040,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "API Gateway",
+      "sublabel": "FastAPI :8000",
+      "pos": [
+        1290,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "React Dashboard",
+      "sublabel": "metrics + debug UI",
+      "pos": [
+        1540,
+        310
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "tracing",
+      "type": "cloud",
+      "label": "OpenTelemetry",
+      "sublabel": "Jaeger :16686",
+      "pos": [
+        790,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "debug",
+      "type": "backend",
+      "label": "Debug Service",
+      "sublabel": "FastAPI :8003",
+      "pos": [
+        1290,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "root cause + replay"
+    },
+    {
+      "id": "metadb",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "metadata :5432",
+      "pos": [
+        1540,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "observability",
+      "type": "cloud",
+      "label": "Prometheus + Grafana",
+      "sublabel": "dashboards + alerts",
+      "pos": [
+        790,
+        510
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "hot cache :6379",
+      "pos": [
+        1290,
+        510
+      ],
+      "size": [
+        150,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "search-metrics platform",
+      "wraps": [
+        "collector",
+        "kafka",
+        "engine",
+        "clickhouse",
+        "gateway",
+        "dashboard",
+        "tracing",
+        "debug",
+        "metadb",
+        "observability",
+        "redis"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "traffic",
+      "from": "simulator",
+      "to": "collector",
+      "label": "HTTP events",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "publish",
+      "from": "collector",
+      "to": "kafka",
+      "label": "publish",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "consume",
+      "from": "kafka",
+      "to": "engine",
+      "label": "consume",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "insert",
+      "from": "engine",
+      "to": "clickhouse",
+      "label": "batch insert",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "read-metrics",
+      "from": "clickhouse",
+      "to": "gateway",
+      "label": "aggregates",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "serve",
+      "from": "gateway",
+      "to": "dashboard",
+      "label": "REST + OpenAPI",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "spans",
+      "from": "collector",
+      "to": "tracing",
+      "label": "OTEL spans",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          365,
+          142
+        ]
+      ],
+      "labelAt": [
+        560,
+        130
+      ]
+    },
+    {
+      "id": "traces",
+      "from": "tracing",
+      "to": "debug",
+      "label": "traces",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "replay-jobs",
+      "from": "debug",
+      "to": "metadb",
+      "label": "replay jobs",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "root-cause",
+      "from": "debug",
+      "to": "gateway",
+      "label": "findings",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1365,
+        242
+      ]
+    },
+    {
+      "id": "cache",
+      "from": "gateway",
+      "to": "redis",
+      "label": "cache",
+      "variant": "dashed",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1365,
+        442
+      ]
+    },
+    {
+      "id": "scrape",
+      "from": "engine",
+      "to": "observability",
+      "label": "/metrics",
+      "variant": "dashed",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        865,
+        442
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Ingest",
+      "items": [
+        "Collector validates, enriches and rate-limits every event",
+        "Kafka topics: search.events, search.results, search.errors, search.anomalies"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Analyse",
+      "items": [
+        "Metrics engine computes p50/p95/p99, relevance and error rate per window",
+        "Z-score detector publishes anomalies back to Kafka"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Debug and serve",
+      "items": [
+        "Debug service assembles traces, ranks root causes and replays queries",
+        "Gateway answers dashboard queries from ClickHouse with a Redis hot cache"
+      ]
+    }
+  ]
+}

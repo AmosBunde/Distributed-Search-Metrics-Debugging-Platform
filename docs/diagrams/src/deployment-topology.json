@@ -1,0 +1,401 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Deployment Topology",
+    "subtitle": "What runs in Kubernetes, what is a managed service — AWS, Azure and GCP",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "workloads",
+        "label": "Cluster workloads",
+        "focus": [
+          "dashboard",
+          "gateway",
+          "engine",
+          "collector",
+          "debug"
+        ],
+        "note": "The five containers the Helm chart deploys into one namespace."
+      },
+      {
+        "id": "managed",
+        "label": "Managed services",
+        "focus": [
+          "kafka",
+          "clickhouse",
+          "postgres",
+          "redis",
+          "objstore"
+        ],
+        "note": "Everything stateful is a managed service, named per cloud in the chart values."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "engineers",
+      "type": "external",
+      "label": "Engineers",
+      "sublabel": "browser + CLI",
+      "pos": [
+        40,
+        250
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "ingress",
+      "type": "cloud",
+      "label": "Ingress",
+      "sublabel": "ALB · App Gateway · GCLB",
+      "pos": [
+        260,
+        250
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "TLS"
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "Dashboard",
+      "sublabel": "nginx static",
+      "pos": [
+        500,
+        120
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "API Gateway",
+      "sublabel": "HPA 2–10 pods",
+      "pos": [
+        500,
+        250
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Metrics Engine",
+      "sublabel": "1 pod per partition set",
+      "pos": [
+        500,
+        380
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "collector",
+      "type": "backend",
+      "label": "Telemetry Collector",
+      "sublabel": "HPA 3–30 pods",
+      "pos": [
+        500,
+        510
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "debug",
+      "type": "backend",
+      "label": "Debug Service",
+      "sublabel": "2 pods",
+      "pos": [
+        500,
+        640
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "clickhouse",
+      "type": "database",
+      "label": "ClickHouse",
+      "sublabel": "EC2 / VM cluster",
+      "pos": [
+        780,
+        250
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "kafka",
+      "type": "messagebus",
+      "label": "Managed Kafka",
+      "sublabel": "MSK · Event Hubs · Pub/Sub",
+      "pos": [
+        780,
+        440
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "Managed Postgres",
+      "sublabel": "RDS · Flexible · Cloud SQL",
+      "pos": [
+        780,
+        640
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Managed Redis",
+      "sublabel": "ElastiCache · Memorystore",
+      "pos": [
+        1020,
+        120
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "objstore",
+      "type": "cloud",
+      "label": "Object Storage",
+      "sublabel": "S3 · Blob · GCS",
+      "pos": [
+        1020,
+        250
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "lifecycle tiering"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Cloud region — 3 availability zones",
+      "wraps": [
+        "ingress",
+        "dashboard",
+        "gateway",
+        "engine",
+        "collector",
+        "debug",
+        "clickhouse",
+        "kafka",
+        "postgres",
+        "redis",
+        "objstore"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Kubernetes namespace: search-metrics",
+      "wraps": [
+        "dashboard",
+        "gateway",
+        "engine",
+        "collector",
+        "debug"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator-traffic",
+      "from": "engineers",
+      "to": "ingress",
+      "label": "HTTPS",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "serve-ui",
+      "from": "ingress",
+      "to": "dashboard",
+      "label": "static UI",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          340,
+          150
+        ]
+      ],
+      "labelAt": [
+        430,
+        138
+      ]
+    },
+    {
+      "id": "serve-api",
+      "from": "ingress",
+      "to": "gateway",
+      "label": "/api/v1",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "gateway-sql",
+      "from": "gateway",
+      "to": "clickhouse",
+      "label": "SQL",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        755,
+        268
+      ]
+    },
+    {
+      "id": "gateway-cache",
+      "from": "gateway",
+      "to": "redis",
+      "label": "cache",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          700,
+          280
+        ],
+        [
+          700,
+          150
+        ]
+      ],
+      "labelAt": [
+        880,
+        138
+      ]
+    },
+    {
+      "id": "engine-insert",
+      "from": "engine",
+      "to": "clickhouse",
+      "label": "batch insert",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          860,
+          410
+        ]
+      ],
+      "labelAt": [
+        762,
+        398
+      ]
+    },
+    {
+      "id": "collector-publish",
+      "from": "collector",
+      "to": "kafka",
+      "label": "publish",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          720,
+          540
+        ],
+        [
+          720,
+          470
+        ]
+      ],
+      "labelAt": [
+        700,
+        505
+      ]
+    },
+    {
+      "id": "debug-meta",
+      "from": "debug",
+      "to": "postgres",
+      "label": "replay jobs",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    },
+    {
+      "id": "archive",
+      "from": "clickhouse",
+      "to": "objstore",
+      "label": "archive",
+      "variant": "dashed",
+      "route": "straight",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -26
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "One chart, three clouds",
+      "items": [
+        "The same Helm chart deploys all five workloads",
+        "Only registry, storage class, ingress annotations and endpoints differ per cloud"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Stateless in, stateful out",
+      "items": [
+        "Every pod is stateless and horizontally scalable",
+        "Kafka, Postgres and Redis are managed services; ClickHouse runs on dedicated VMs"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Scaling knobs",
+      "items": [
+        "The collector scales on request rate; the engine scales with Kafka partitions",
+        "Raw telemetry tiers into cheaper object storage on a lifecycle policy"
+      ]
+    }
+  ]
+}

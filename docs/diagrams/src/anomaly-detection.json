@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Anomaly Detection and Alerting",
+    "subtitle": "How one closed window becomes a page — or is deliberately suppressed",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "detection",
+        "label": "Detection",
+        "focus": [
+          "window",
+          "baseline",
+          "score",
+          "publish"
+        ],
+        "note": "A window is only anomalous relative to its own recent history."
+      },
+      {
+        "id": "notification",
+        "label": "Notification",
+        "focus": [
+          "score",
+          "publish",
+          "route"
+        ],
+        "note": "Severity decides whether an anomaly pages a human or posts to chat."
+      },
+      {
+        "id": "suppression",
+        "label": "Suppression",
+        "focus": [
+          "score",
+          "coldstart",
+          "duplicate"
+        ],
+        "note": "The two cases that must never generate an alert."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "stream",
+      "label": "Stream"
+    },
+    {
+      "id": "detect",
+      "label": "Detection"
+    },
+    {
+      "id": "notify",
+      "label": "Notification"
+    },
+    {
+      "id": "suppressed",
+      "label": "Suppressed",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "aggregate",
+      "label": "Aggregate",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "evaluate",
+      "label": "Evaluate",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "act",
+      "label": "Act",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "consume",
+    "window",
+    "baseline",
+    "score",
+    "publish",
+    "route"
+  ],
+  "nodes": [
+    {
+      "id": "consume",
+      "lane": "stream",
+      "col": 0,
+      "type": "messagebus",
+      "label": "Consume",
+      "sublabel": "search.events"
+    },
+    {
+      "id": "window",
+      "lane": "detect",
+      "col": 1,
+      "type": "backend",
+      "label": "Window",
+      "sublabel": "60s tumbling",
+      "tag": "per service",
+      "width": 72
+    },
+    {
+      "id": "baseline",
+      "lane": "detect",
+      "col": 2,
+      "type": "database",
+      "label": "Baseline",
+      "sublabel": "last 30 windows",
+      "width": 72
+    },
+    {
+      "id": "score",
+      "lane": "detect",
+      "col": 3,
+      "type": "backend",
+      "label": "Score",
+      "sublabel": "z = (x − μ) / σ",
+      "tag": "threshold 3σ",
+      "width": 64
+    },
+    {
+      "id": "publish",
+      "lane": "notify",
+      "col": 4,
+      "type": "messagebus",
+      "label": "Publish",
+      "sublabel": "search.anomalies",
+      "width": 72
+    },
+    {
+      "id": "route",
+      "lane": "notify",
+      "col": 5,
+      "type": "external",
+      "label": "Route Alert",
+      "sublabel": "by severity",
+      "tag": "PagerDuty / Slack",
+      "width": 72
+    },
+    {
+      "id": "coldstart",
+      "lane": "suppressed",
+      "col": 2,
+      "type": "security",
+      "label": "Cold Start",
+      "sublabel": "σ = 0 or no history"
+    },
+    {
+      "id": "duplicate",
+      "lane": "suppressed",
+      "col": 4,
+      "type": "security",
+      "label": "Duplicate",
+      "sublabel": "already firing"
+    }
+  ],
+  "edges": [
+    {
+      "from": "consume",
+      "to": "window",
+      "label": "events",
+      "variant": "emphasis",
+      "role": "main",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "window",
+      "to": "baseline",
+      "role": "main",
+      "route": "bottom-channel",
+      "fromSide": "bottom",
+      "toSide": "bottom"
+    },
+    {
+      "from": "baseline",
+      "to": "score",
+      "variant": "emphasis",
+      "role": "main",
+      "route": "bottom-channel",
+      "fromSide": "bottom",
+      "toSide": "bottom"
+    },
+    {
+      "from": "score",
+      "to": "publish",
+      "label": "|z| > 3",
+      "variant": "emphasis",
+      "role": "main",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        465,
+        291
+      ]
+    },
+    {
+      "from": "publish",
+      "to": "route",
+      "role": "main",
+      "route": "bottom-channel",
+      "fromSide": "bottom",
+      "toSide": "bottom"
+    },
+    {
+      "from": "baseline",
+      "to": "coldstart",
+      "label": "too little history",
+      "variant": "security",
+      "role": "error",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "publish",
+      "to": "duplicate",
+      "variant": "security",
+      "role": "error",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Relative, not absolute",
+      "items": [
+        "A window is scored against its own last 30 windows, per service",
+        "Fixed thresholds would page on every traffic pattern change"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Never alert on these",
+      "items": [
+        "Zero variance or too little history — a cold start is not an anomaly",
+        "An anomaly whose signature is already firing does not page twice"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "One source of truth",
+      "items": [
+        "Anomalies are published to Kafka before anything is routed",
+        "The dashboard and the alert pipeline read the same records"
+      ]
+    }
+  ]
+}

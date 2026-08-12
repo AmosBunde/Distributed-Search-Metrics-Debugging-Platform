@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Debugging a Slow Query",
+    "subtitle": "From an operator opening a query to a replayed result",
+    "viewBox": [
+      900,
+      800
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "investigate",
+        "label": "Investigate",
+        "focus": [
+          "operator",
+          "dashboard",
+          "gateway",
+          "debug"
+        ],
+        "note": "The operator asks the platform why one query was slow."
+      },
+      {
+        "id": "evidence",
+        "label": "Gather evidence",
+        "focus": [
+          "debug",
+          "traces",
+          "clickhouse"
+        ],
+        "note": "Root cause analysis needs both the trace and the baseline it broke."
+      },
+      {
+        "id": "replay",
+        "label": "Replay",
+        "focus": [
+          "dashboard",
+          "gateway",
+          "debug",
+          "search"
+        ],
+        "note": "Re-issuing the query proves whether the fault still reproduces."
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Operator",
+      "sublabel": "on-call engineer"
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "Dashboard",
+      "sublabel": "React UI"
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "API Gateway",
+      "sublabel": ":8000"
+    },
+    {
+      "id": "debug",
+      "type": "backend",
+      "label": "Debug Service",
+      "sublabel": ":8003"
+    },
+    {
+      "id": "traces",
+      "type": "database",
+      "label": "Trace Store",
+      "sublabel": "OTEL spans"
+    },
+    {
+      "id": "clickhouse",
+      "type": "database",
+      "label": "ClickHouse",
+      "sublabel": "baselines"
+    },
+    {
+      "id": "search",
+      "type": "external",
+      "label": "Search API",
+      "sublabel": "replay target"
+    }
+  ],
+  "segments": [
+    {
+      "from": 170,
+      "to": 300,
+      "label": "Open the query"
+    },
+    {
+      "from": 320,
+      "to": 520,
+      "label": "Root cause analysis"
+    },
+    {
+      "from": 540,
+      "to": 714,
+      "label": "Replay"
+    }
+  ],
+  "messages": [
+    {
+      "id": "pick-query",
+      "from": "operator",
+      "to": "dashboard",
+      "y": 200,
+      "label": "open slow query",
+      "variant": "default"
+    },
+    {
+      "id": "debug-request",
+      "from": "dashboard",
+      "to": "gateway",
+      "y": 245,
+      "label": "GET /debug/query/{id}",
+      "variant": "emphasis"
+    },
+    {
+      "id": "fetch-bundle",
+      "from": "gateway",
+      "to": "debug",
+      "y": 290,
+      "label": "assemble debug bundle",
+      "variant": "emphasis"
+    },
+    {
+      "id": "load-spans",
+      "from": "debug",
+      "to": "traces",
+      "y": 345,
+      "label": "spans by trace_id",
+      "variant": "default"
+    },
+    {
+      "id": "span-tree",
+      "from": "traces",
+      "to": "debug",
+      "y": 385,
+      "label": "ordered span tree",
+      "variant": "return"
+    },
+    {
+      "id": "baseline",
+      "from": "debug",
+      "to": "clickhouse",
+      "y": 430,
+      "label": "p95 baseline for service",
+      "variant": "default"
+    },
+    {
+      "id": "baseline-rows",
+      "from": "clickhouse",
+      "to": "debug",
+      "y": 470,
+      "label": "rolling window",
+      "variant": "return"
+    },
+    {
+      "id": "findings",
+      "from": "debug",
+      "to": "gateway",
+      "y": 512,
+      "label": "ranked findings",
+      "variant": "return"
+    },
+    {
+      "id": "render",
+      "from": "gateway",
+      "to": "dashboard",
+      "y": 552,
+      "label": "waterfall + root cause",
+      "variant": "return"
+    },
+    {
+      "id": "replay-request",
+      "from": "dashboard",
+      "to": "gateway",
+      "y": 592,
+      "label": "POST /debug/replay",
+      "variant": "emphasis"
+    },
+    {
+      "id": "reissue",
+      "from": "gateway",
+      "to": "search",
+      "y": 632,
+      "label": "re-issue recorded query",
+      "variant": "dashed"
+    },
+    {
+      "id": "replay-result",
+      "from": "search",
+      "to": "gateway",
+      "y": 670,
+      "label": "results + latency",
+      "variant": "return"
+    },
+    {
+      "id": "diff",
+      "from": "gateway",
+      "to": "dashboard",
+      "y": 708,
+      "label": "diff vs original run",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "dashboard",
+      "from": 195,
+      "to": 713,
+      "type": "frontend"
+    },
+    {
+      "participant": "gateway",
+      "from": 240,
+      "to": 713,
+      "type": "backend"
+    },
+    {
+      "participant": "debug",
+      "from": 285,
+      "to": 518,
+      "type": "backend"
+    },
+    {
+      "participant": "traces",
+      "from": 340,
+      "to": 392,
+      "type": "database"
+    },
+    {
+      "participant": "clickhouse",
+      "from": 425,
+      "to": 477,
+      "type": "database"
+    },
+    {
+      "participant": "search",
+      "from": 627,
+      "to": 677,
+      "type": "external"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "One request, one answer",
+      "items": [
+        "The dashboard never talks to the debug service directly",
+        "The gateway is the only public surface, so auth and caching live in one place"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Evidence, not guesses",
+      "items": [
+        "Every finding cites the span or metric that produced it",
+        "A slow span is only a root cause if it also broke its own baseline"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Replay is explicit",
+      "items": [
+        "Replay is a separate, operator-triggered call \u2014 never automatic",
+        "The diff shows whether the fault still reproduces"
+      ]
+    }
+  ]
+}
