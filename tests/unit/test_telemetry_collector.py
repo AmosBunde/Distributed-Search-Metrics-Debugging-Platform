@@ -14,9 +14,9 @@ from services_path import add_service_to_path
 
 add_service_to_path("telemetry-collector")
 
-from app.ingest import enrich, ingest_events  # noqa: E402
-from app.main import app  # noqa: E402
-from app.rate_limit import (  # noqa: E402
+from collector.ingest import enrich, ingest_events  # noqa: E402
+from collector.main import app  # noqa: E402
+from collector.rate_limit import (  # noqa: E402
     InMemoryTokenBucket,
     NullRateLimiter,
     RedisTokenBucket,

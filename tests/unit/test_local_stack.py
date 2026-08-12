@@ -47,6 +47,7 @@ EXPECTED_SERVICES = {
     "prometheus",
     "grafana",
     "telemetry-collector",
+    "metrics-engine",
 }
 
 
@@ -182,3 +183,20 @@ class TestMakefile:
     def test_stack_targets_are_implemented(self, target: str, makefile: str) -> None:
         body = makefile[makefile.index(f"\n{target}:") :].split("\n\n")[0]
         assert "not_implemented" not in body, f"{target} is still a stub"
+
+
+def test_service_packages_have_distinct_names() -> None:
+    """Two services both naming their package `app` collide in one pytest session.
+
+    The first `app` imported wins and every other service's tests fail with a
+    confusing ModuleNotFoundError, so each service names its package after
+    itself.
+    """
+    packages = []
+    for service in (ROOT / "services").iterdir():
+        if not service.is_dir():
+            continue
+        packages += [child.name for child in service.iterdir() if (child / "__init__.py").is_file()]
+
+    assert "app" not in packages, "a service package named `app` will collide"
+    assert len(packages) == len(set(packages)), f"duplicate service packages: {packages}"

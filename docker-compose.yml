@@ -230,6 +230,33 @@ services:
       RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-6000}
       RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-600}
 
+  metrics-engine:
+    build:
+      context: .
+      dockerfile: services/metrics-engine/Dockerfile
+    <<: *restart
+    container_name: search-metrics-engine
+    depends_on:
+      kafka: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+    ports:
+      - "${METRICS_ENGINE_PORT:-8002}:8002"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-search_metrics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-search}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      WINDOW_SECONDS: ${WINDOW_SECONDS:-60}
+      ANOMALY_ZSCORE_THRESHOLD: ${ANOMALY_ZSCORE_THRESHOLD:-3.0}
+      ANOMALY_BASELINE_WINDOWS: ${ANOMALY_BASELINE_WINDOWS:-30}
+      CLICKHOUSE_INSERT_BATCH_SIZE: ${CLICKHOUSE_INSERT_BATCH_SIZE:-1000}
+      CLICKHOUSE_INSERT_INTERVAL_SECONDS: ${CLICKHOUSE_INSERT_INTERVAL_SECONDS:-5}
+
 volumes:
   kafka-data:
   clickhouse-data:
