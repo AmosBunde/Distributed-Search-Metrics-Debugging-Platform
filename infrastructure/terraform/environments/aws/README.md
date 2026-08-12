@@ -12,7 +12,7 @@ it talks to.
 | EKS 1.29 | Private API endpoint by default, managed node group, cluster autoscaler role |
 | MSK (3 brokers) | No auto topic creation, no unclean leader election, 7-day retention |
 | RDS PostgreSQL 15 | Multi-AZ in prod, encrypted, Performance Insights |
-| ElastiCache Redis 7 | Replica and automatic failover in prod |
+| ElastiCache Redis 7 | TLS in transit with an AUTH token, replica and failover in prod |
 | ClickHouse on EC2 | gp3 with provisioned throughput, Session Manager access, no SSH |
 | S3 | Versioned in prod, tiering to IA at 30 days and Glacier at 90 |
 | KMS | One key for all platform data at rest |
@@ -31,6 +31,7 @@ terraform init -backend-config="bucket=…" -backend-config="key=…" …
 cp terraform.tfvars.example terraform.tfvars   # gitignored
 export TF_VAR_db_password='…'                  # never in a file
 export TF_VAR_clickhouse_password='…'
+export TF_VAR_redis_auth_token='…'             # required: Redis uses TLS + AUTH
 
 # 4. Review, then apply
 terraform plan -out=tfplan
@@ -73,6 +74,15 @@ open it, and the variable's name makes it obvious you are doing so.
 
 **IMDSv2 is required on the ClickHouse instances**, so a server-side request
 forgery cannot be turned into instance credentials.
+
+**Every datastore authenticates.** A security group is a network control, not
+an identity one: ClickHouse gets a password (as a SHA-256 digest, because user
+data is readable by anything on the instance), and Redis gets TLS plus an AUTH
+token. Reaching the port is not the same as being allowed to use it.
+
+**A public Kubernetes API needs named networks.** Enabling the public endpoint
+without CIDRs makes AWS default to `0.0.0.0/0`, so the module refuses that
+combination rather than letting it look configured.
 
 ## Cost
 

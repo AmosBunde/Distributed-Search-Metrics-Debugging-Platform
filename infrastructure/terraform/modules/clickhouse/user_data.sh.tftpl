@@ -31,13 +31,39 @@ cat > /etc/clickhouse-server/config.d/listen.xml <<'XML'
 </clickhouse>
 XML
 
+# Authentication. Security groups are a network control, not an identity one:
+# anything that reaches the port must still have to prove who it is.
+cat > /etc/clickhouse-server/users.d/platform.xml <<XML
+<clickhouse>
+    <users>
+        <${username}>
+            <password_sha256_hex>${password_sha256}</password_sha256_hex>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>0</access_management>
+        </${username}>
+        <!-- The default user ships with no password; leaving it enabled would
+             make every control above pointless. -->
+        <default remove="remove"/>
+    </users>
+</clickhouse>
+XML
+chmod 600 /etc/clickhouse-server/users.d/platform.xml
+chown clickhouse:clickhouse /etc/clickhouse-server/users.d/platform.xml
+
 systemctl enable --now clickhouse-server
 
 # Wait for the server, then create the database the platform expects.
 for _ in $(seq 1 30); do
-    if clickhouse-client --query "SELECT 1" >/dev/null 2>&1; then break; fi
+    if clickhouse-client --user "${username}" --password "$CLICKHOUSE_BOOTSTRAP_PASSWORD" \
+        --query "SELECT 1" >/dev/null 2>&1; then break; fi
     sleep 2
 done
 
-clickhouse-client --query "CREATE DATABASE IF NOT EXISTS ${database}"
+# The bootstrap password is never written to disk: the digest is all the server
+# needs, and the database is created by the local socket user.
+clickhouse-client --query "CREATE DATABASE IF NOT EXISTS ${database}" 2>/dev/null \
+    || clickhouse-client --user "${username}" --password "$CLICKHOUSE_BOOTSTRAP_PASSWORD" \
+        --query "CREATE DATABASE IF NOT EXISTS ${database}"
 echo "clickhouse ready for cluster ${cluster_name} as user ${username}"

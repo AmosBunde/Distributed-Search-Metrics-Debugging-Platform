@@ -71,6 +71,23 @@ variable "username" {
   default     = "search"
 }
 
+variable "password_sha256_hex" {
+  description = <<-DESC
+    SHA-256 hex digest of the application user's password.
+
+    The digest rather than the password: user data is readable through the
+    instance metadata service by anything running on the box, so a plaintext
+    credential there is a credential shared with every process on the host.
+  DESC
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.password_sha256_hex))
+    error_message = "password_sha256_hex must be a 64-character lowercase hex SHA-256 digest."
+  }
+}
+
 variable "backup_bucket_arn" {
   description = "S3 bucket for backups. Empty disables backup permissions."
   type        = string

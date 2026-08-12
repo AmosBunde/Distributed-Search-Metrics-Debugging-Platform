@@ -24,6 +24,17 @@ locals {
   tags = merge(var.tags, { Module = "eks" })
 }
 
+# A public endpoint with no CIDR list is open to the internet, so the two
+# settings are checked together rather than each looking reasonable alone.
+resource "terraform_data" "public_access_requires_cidrs" {
+  lifecycle {
+    precondition {
+      condition     = !var.endpoint_public_access || length(var.public_access_cidrs) > 0
+      error_message = "endpoint_public_access requires public_access_cidrs: an empty list means 0.0.0.0/0."
+    }
+  }
+}
+
 resource "aws_iam_role" "cluster" {
   name = "${var.name}-cluster"
 

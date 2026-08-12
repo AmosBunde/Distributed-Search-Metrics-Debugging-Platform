@@ -103,6 +103,22 @@ variable "clickhouse_password" {
   }
 }
 
+variable "redis_auth_token" {
+  description = <<-DESC
+    ElastiCache AUTH token. Supply via TF_VAR_redis_auth_token.
+
+    Required because transit encryption is on: without a token, anything that
+    reaches the endpoint can use it, and the TLS only protects it in flight.
+  DESC
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.redis_auth_token) >= 16 && length(var.redis_auth_token) <= 128
+    error_message = "redis_auth_token must be between 16 and 128 characters."
+  }
+}
+
 variable "db_instance_class" {
   description = "RDS instance class"
   type        = string

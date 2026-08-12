@@ -104,6 +104,8 @@ only ever come from the existing Secret.
   value: {{ .Values.dependencies.redis.host | quote }}
 - name: REDIS_PORT
   value: {{ .Values.dependencies.redis.port | quote }}
+- name: REDIS_TLS
+  value: {{ .Values.dependencies.redis.tls | quote }}
 - name: REDIS_PASSWORD
   valueFrom:
     secretKeyRef:

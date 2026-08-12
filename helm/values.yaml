@@ -59,6 +59,8 @@ dependencies:
   redis:
     host: ""
     port: 6379
+    # Managed Redis with transit encryption enabled speaks TLS only.
+    tls: true
 
 # Passwords come from a Secret that already exists in the namespace; the chart
 # never renders one, so a credential cannot end up in a values file or in

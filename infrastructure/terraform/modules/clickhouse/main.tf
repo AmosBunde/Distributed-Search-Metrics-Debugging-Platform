@@ -147,6 +147,7 @@ resource "aws_instance" "this" {
     username           = var.username
     cluster_name       = var.name
     data_device        = "/dev/nvme1n1"
+    password_sha256    = var.password_sha256_hex
   })
 
   tags = merge(local.tags, { Name = "${var.name}-clickhouse-${count.index + 1}" })

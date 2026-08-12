@@ -151,3 +151,41 @@ class TestDocumentation:
             "irsa_role_arn",
         ):
             assert f'output "{name}"' in outputs
+
+
+class TestSecurityReviewFindings:
+    """Three findings from a review of the first Terraform commit.
+
+    Each is a control that looked reasonable in isolation and was wrong in
+    combination, which is exactly the kind a checklist misses.
+    """
+
+    def test_clickhouse_requires_authentication(self) -> None:
+        """The password variable was validated and then never used: the server
+        came up with an unauthenticated default user behind a security group."""
+        user_data = (MODULES / "clickhouse" / "user_data.sh.tftpl").read_text(encoding="utf-8")
+        assert "password_sha256_hex" in user_data
+        assert '<default remove="remove"/>' in user_data, "the passwordless default user must go"
+
+        main = (ENVIRONMENTS / "aws" / "main.tf").read_text(encoding="utf-8")
+        assert "password_sha256_hex = sha256(var.clickhouse_password)" in main
+
+    def test_the_clickhouse_password_never_reaches_user_data_in_plaintext(self) -> None:
+        """User data is readable by anything running on the instance."""
+        variables = (MODULES / "clickhouse" / "variables.tf").read_text(encoding="utf-8")
+        assert 'variable "password_sha256_hex"' in variables
+        assert 'variable "password"' not in variables
+
+    def test_redis_traffic_is_encrypted_in_transit(self) -> None:
+        main = (ENVIRONMENTS / "aws" / "main.tf").read_text(encoding="utf-8")
+        assert "transit_encryption_enabled = true" in main
+        assert "auth_token                 = var.redis_auth_token" in main
+
+    def test_a_public_kubernetes_api_requires_named_networks(self) -> None:
+        """An enabled public endpoint with no CIDRs defaults to 0.0.0.0/0."""
+        eks_main = (MODULES / "eks" / "main.tf").read_text(encoding="utf-8")
+        assert "precondition" in eks_main
+        assert "endpoint_public_access requires public_access_cidrs" in eks_main
+
+        eks_vars = (MODULES / "eks" / "variables.tf").read_text(encoding="utf-8")
+        assert '!contains(var.public_access_cidrs, "0.0.0.0/0")' in eks_vars
