@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+#
+#   export TF_VAR_db_password='…'
+
+project_id  = "my-project"
+region      = "us-central1"
+environment = "dev"
+name        = "search-metrics"
+
+subnet_cidr   = "10.2.0.0/20"
+pods_cidr     = "10.4.0.0/14"
+services_cidr = "10.8.0.0/20"
+
+postgres_tier   = "db-custom-2-7680"
+redis_memory_gb = 4
+
+# Networks allowed to reach the Kubernetes control plane. Leave empty for none.
+authorized_networks = [
+  # { cidr_block = "203.0.113.0/24", display_name = "office" },
+]

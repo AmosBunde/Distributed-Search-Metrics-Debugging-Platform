@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+#
+# The password is NOT set here:
+#
+#   export TF_VAR_db_password='…'
+
+location    = "eastus"
+environment = "dev"
+name        = "search-metrics"
+
+vnet_cidr          = "10.1.0.0/16"
+kubernetes_version = "1.29"
+
+node_vm_size   = "Standard_D8s_v3"
+node_min_count = 3
+node_max_count = 30
+
+eventhub_capacity     = 4
+eventhub_max_capacity = 20
+
+postgres_sku   = "GP_Standard_D2ds_v4"
+redis_capacity = 1

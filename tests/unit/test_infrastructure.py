@@ -189,3 +189,90 @@ class TestSecurityReviewFindings:
 
         eks_vars = (MODULES / "eks" / "variables.tf").read_text(encoding="utf-8")
         assert '!contains(var.public_access_cidrs, "0.0.0.0/0")' in eks_vars
+
+
+CLOUDS = ["aws", "azure", "gcp"]
+
+
+class TestEveryCloudGetsTheSamePlatform:
+    """ADR-0005: one module set, three environments, one behaviour.
+
+    The failure these guard against is drift — a capability that quietly exists
+    on one cloud and not the others, found during an incident on the cloud that
+    lacks it.
+    """
+
+    @pytest.mark.parametrize("cloud", CLOUDS)
+    def test_each_environment_is_complete(self, cloud: str) -> None:
+        directory = ENVIRONMENTS / cloud
+        for name in ("main.tf", "variables.tf", "outputs.tf", "versions.tf", "README.md"):
+            assert (directory / name).is_file(), f"{cloud} is missing {name}"
+        assert (directory / "terraform.tfvars.example").is_file()
+
+    @pytest.mark.parametrize("cloud", CLOUDS)
+    def test_each_environment_outputs_what_helm_needs(self, cloud: str) -> None:
+        outputs = (ENVIRONMENTS / cloud / "outputs.tf").read_text(encoding="utf-8")
+        assert (
+            'output "helm_values_snippet"' in outputs
+        ), f"{cloud}: endpoints would have to be transcribed by hand"
+        for name in ("postgres", "redis"):
+            assert name in outputs, f"{cloud}: no {name} endpoint is exported"
+
+    @pytest.mark.parametrize("cloud", CLOUDS)
+    def test_each_environment_admits_it_has_never_been_applied(self, cloud: str) -> None:
+        readme = (ENVIRONMENTS / cloud / "README.md").read_text(encoding="utf-8")
+        assert "never been applied" in readme.lower()
+
+    @pytest.mark.parametrize("cloud", CLOUDS)
+    def test_each_environment_validates_its_password(self, cloud: str) -> None:
+        variables = (ENVIRONMENTS / cloud / "variables.tf").read_text(encoding="utf-8")
+        assert "sensitive   = true" in variables
+        assert "at least 16 characters" in variables
+
+    @pytest.mark.parametrize("cloud", CLOUDS)
+    def test_each_environment_pins_its_provider_major_version(self, cloud: str) -> None:
+        """A provider major bump changes resource shapes under a working plan."""
+        versions = (ENVIRONMENTS / cloud / "versions.tf").read_text(encoding="utf-8")
+        assert ">= 5.40" in versions or "~> 4.0" in versions or "~> 6.0" in versions
+
+    @pytest.mark.parametrize("cloud", CLOUDS)
+    def test_every_cloud_encrypts_redis_in_transit(self, cloud: str) -> None:
+        """The finding fixed on AWS must not survive on the other two."""
+        main = (ENVIRONMENTS / cloud / "main.tf").read_text(encoding="utf-8")
+        markers = {
+            "aws": "transit_encryption_enabled = true",
+            "azure": "non_ssl_port_enabled = false",
+            "gcp": 'transit_encryption_mode = "SERVER_AUTHENTICATION"',
+        }
+        assert markers[cloud] in main
+
+    @pytest.mark.parametrize("cloud", CLOUDS)
+    def test_every_cloud_keeps_its_database_off_the_public_internet(self, cloud: str) -> None:
+        main = (ENVIRONMENTS / cloud / "main.tf").read_text(encoding="utf-8")
+        markers = {
+            "aws": "publicly_accessible    = false",
+            "azure": "public_network_access_enabled = false",
+            "gcp": "ipv4_enabled                                  = false",
+        }
+        assert markers[cloud] in main
+
+    def test_all_five_topics_exist_on_every_cloud(self) -> None:
+        """A topic missing on one cloud breaks ingest only there."""
+        topics = [
+            "search.events",
+            "search.results",
+            "search.errors",
+            "search.anomalies",
+            "search.spans",
+        ]
+        for cloud, path in [("azure", "azure/main.tf"), ("gcp", "gcp/main.tf")]:
+            main = (ENVIRONMENTS / path).read_text(encoding="utf-8")
+            for topic in topics:
+                assert topic in main, f"{cloud} does not create {topic}"
+
+    def test_kubernetes_modules_share_an_interface(self) -> None:
+        """The chart must not need to know which cloud it is running on."""
+        for module in ("eks", "aks", "gke"):
+            outputs = (MODULES / module / "outputs.tf").read_text(encoding="utf-8")
+            assert 'output "cluster_name"' in outputs
+            assert 'output "kubeconfig_command"' in outputs
