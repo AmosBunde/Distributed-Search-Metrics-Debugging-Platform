@@ -281,6 +281,29 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
 
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    <<: *restart
+    container_name: search-metrics-gateway
+    depends_on:
+      clickhouse: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "${API_GATEWAY_PORT:-8000}:8000"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-search_metrics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-search}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+      REDIS_HOST: redis
+      COLLECTOR_URL: http://telemetry-collector:8001
+      DEBUG_SERVICE_URL: http://debug-service:8003
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+
 volumes:
   kafka-data:
   clickhouse-data:

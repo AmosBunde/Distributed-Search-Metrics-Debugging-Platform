@@ -49,6 +49,7 @@ EXPECTED_SERVICES = {
     "telemetry-collector",
     "metrics-engine",
     "debug-service",
+    "api-gateway",
 }
 
 
