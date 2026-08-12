@@ -257,6 +257,30 @@ services:
       CLICKHOUSE_INSERT_BATCH_SIZE: ${CLICKHOUSE_INSERT_BATCH_SIZE:-1000}
       CLICKHOUSE_INSERT_INTERVAL_SECONDS: ${CLICKHOUSE_INSERT_INTERVAL_SECONDS:-5}
 
+  debug-service:
+    build:
+      context: .
+      dockerfile: services/debug-service/Dockerfile
+    <<: *restart
+    container_name: search-metrics-debug
+    depends_on:
+      clickhouse: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    ports:
+      - "${DEBUG_SERVICE_PORT:-8003}:8003"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-search_metrics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-search}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-changeme}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-search_metrics_meta}
+      POSTGRES_USER: ${POSTGRES_USER:-search}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+
 volumes:
   kafka-data:
   clickhouse-data:
