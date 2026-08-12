@@ -6,8 +6,10 @@ requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.5,<3",
-    "aiokafka>=0.11,<0.13",
-    "lz4>=4.3,<5",
+    "aiokafka[lz4]>=0.11,<0.13",
+    # aiokafka delegates lz4/snappy/zstd to cramjam; the standalone lz4 package
+    # is NOT what its has_lz4() checks for, so compression silently fails without it.
+    "cramjam>=2.8",
     "opentelemetry-api>=1.27,<2",
     "opentelemetry-sdk>=1.27,<2",
     "opentelemetry-exporter-otlp-proto-grpc>=1.27,<2",
