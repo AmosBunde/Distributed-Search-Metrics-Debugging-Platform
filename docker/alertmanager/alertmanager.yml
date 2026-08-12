@@ -1,0 +1,37 @@
+# Alert routing for the local stack.
+#
+# Alertmanager does not expand environment variables in its configuration, so
+# this file has to be valid on its own. Locally that means alerts fire, group,
+# inhibit and appear in the Alertmanager UI at :9093 — and notify nobody, which
+# is the correct behaviour on a laptop.
+#
+# For a real deployment, see alertmanager.production.yml: same routing, real
+# receivers, secrets read from files rather than baked in.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: local-no-op
+  group_by: [alertname, service]
+  # Wait before the first notification so a burst of related alerts arrives as
+  # one page rather than ten.
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    - matchers: [severity="critical"]
+      receiver: local-no-op
+      group_wait: 10s
+      repeat_interval: 1h
+
+inhibit_rules:
+  # A service that is down will also breach its latency and error SLOs. Paging
+  # three times for one outage is how alert fatigue starts.
+  - source_matchers: [alertname="ServiceDown"]
+    target_matchers: [severity=~"warning|critical"]
+    equal: [job]
+
+receivers:
+  - name: local-no-op
