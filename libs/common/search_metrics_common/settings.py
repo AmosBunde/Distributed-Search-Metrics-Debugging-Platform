@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_password: str = ""
     redis_db: int = 0
+    # Managed Redis with transit encryption speaks TLS only, so the scheme has
+    # to follow the deployment rather than being hardcoded.
+    redis_tls: bool = False
 
     # Rate limiting ----------------------------------------------------------
     rate_limit_enabled: bool = True
@@ -96,7 +99,8 @@ class Settings(BaseSettings):
     @property
     def redis_url(self) -> str:
         auth = f":{self.redis_password}@" if self.redis_password else ""
-        return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+        scheme = "rediss" if self.redis_tls else "redis"
+        return f"{scheme}://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     @property
     def is_production(self) -> bool:

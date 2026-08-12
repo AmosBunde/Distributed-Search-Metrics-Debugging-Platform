@@ -325,3 +325,19 @@ class TestBatchPublishing:
             "search.events",
             "search.errors",
         ]
+
+
+class TestRedisTransportSecurity:
+    """Managed Redis with transit encryption speaks TLS only."""
+
+    def test_plaintext_by_default_for_the_local_stack(self) -> None:
+        assert Settings().redis_url.startswith("redis://")
+
+    def test_tls_changes_the_scheme(self, monkeypatch) -> None:
+        monkeypatch.setenv("REDIS_TLS", "true")
+        assert Settings().redis_url.startswith("rediss://")
+
+    def test_tls_and_a_password_travel_together(self, monkeypatch) -> None:
+        monkeypatch.setenv("REDIS_TLS", "true")
+        monkeypatch.setenv("REDIS_PASSWORD", "auth-token")
+        assert Settings().redis_url.startswith("rediss://:auth-token@")

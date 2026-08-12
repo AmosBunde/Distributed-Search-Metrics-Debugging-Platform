@@ -105,6 +105,7 @@ module "clickhouse" {
   instance_count      = var.clickhouse_instance_count
   instance_type       = var.clickhouse_instance_type
   data_volume_size_gb = var.clickhouse_volume_size_gb
+  password_sha256_hex = sha256(var.clickhouse_password)
   backup_bucket_arn   = aws_s3_bucket.telemetry.arn
   tags                = local.common_tags
 }
@@ -227,7 +228,11 @@ resource "aws_elasticache_replication_group" "redis" {
 
   at_rest_encryption_enabled = true
   kms_key_id                 = aws_kms_key.platform.arn
-  transit_encryption_enabled = false
+  # Rate-limit buckets and cached query results cross the network in both
+  # directions; a VPC is not a trust boundary on its own.
+  transit_encryption_enabled = true
+  auth_token                 = var.redis_auth_token
+  auth_token_update_strategy = "ROTATE"
 
   snapshot_retention_limit = local.is_prod ? 5 : 0
   maintenance_window       = "sun:05:00-sun:06:00"

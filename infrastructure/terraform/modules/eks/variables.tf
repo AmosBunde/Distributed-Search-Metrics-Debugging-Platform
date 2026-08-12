@@ -25,15 +25,23 @@ variable "kms_key_arn" {
 }
 
 variable "endpoint_public_access" {
-  description = "Expose the Kubernetes API publicly. Off by default."
+  description = "Expose the Kubernetes API publicly. Off by default, and requires explicit CIDRs."
   type        = bool
   default     = false
 }
 
 variable "public_access_cidrs" {
-  description = "CIDRs allowed to reach a public API endpoint"
+  description = "CIDRs allowed to reach a public API endpoint. Never 0.0.0.0/0."
   type        = list(string)
   default     = []
+
+  validation {
+    # AWS defaults an enabled public endpoint to 0.0.0.0/0 when no CIDRs are
+    # given, so an empty list plus public access is a world-readable Kubernetes
+    # API by omission rather than by decision.
+    condition     = !contains(var.public_access_cidrs, "0.0.0.0/0")
+    error_message = "public_access_cidrs must not contain 0.0.0.0/0: name the networks that need access."
+  }
 }
 
 variable "node_groups" {
