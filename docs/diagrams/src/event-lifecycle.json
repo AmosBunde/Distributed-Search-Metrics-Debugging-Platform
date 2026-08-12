@@ -1,0 +1,273 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Search Event Lifecycle",
+    "subtitle": "Every state a single telemetry event can occupy, and how it leaves each one",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "Accepted path",
+        "focus": [
+          "received",
+          "validated",
+          "published",
+          "aggregated",
+          "stored"
+        ],
+        "note": "The five states an event passes through when nothing goes wrong."
+      },
+      {
+        "id": "backpressure",
+        "label": "Backpressure",
+        "focus": [
+          "published",
+          "lagging",
+          "aggregated"
+        ],
+        "note": "Where an event waits when the consumer falls behind the stream."
+      },
+      {
+        "id": "failure",
+        "label": "Failure and exits",
+        "focus": [
+          "validated",
+          "rejected",
+          "insertfailed",
+          "dropped"
+        ],
+        "note": "Rejection is immediate; insert failure is retried before anything is dropped."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Lifecycle phases"
+    },
+    {
+      "id": "waiting",
+      "label": "Backpressure"
+    },
+    {
+      "id": "recovery",
+      "label": "Retry loop"
+    },
+    {
+      "id": "terminal",
+      "label": "Terminal exits"
+    }
+  ],
+  "states": [
+    {
+      "id": "received",
+      "type": "start",
+      "label": "Received",
+      "sublabel": "POST /telemetry",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "entry"
+    },
+    {
+      "id": "validated",
+      "type": "active",
+      "label": "Validated",
+      "sublabel": "schema + limits",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "enriched"
+    },
+    {
+      "id": "published",
+      "type": "active",
+      "label": "Published",
+      "sublabel": "keyed by query id",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "Kafka"
+    },
+    {
+      "id": "aggregated",
+      "type": "active",
+      "label": "Aggregated",
+      "sublabel": "60s window closed",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "engine"
+    },
+    {
+      "id": "stored",
+      "type": "success",
+      "label": "Stored",
+      "sublabel": "queryable rollup",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "ClickHouse"
+    },
+    {
+      "id": "lagging",
+      "type": "waiting",
+      "label": "Awaiting Consumer",
+      "sublabel": "consumer lag",
+      "lane": "waiting",
+      "col": 0,
+      "tag": "backlog"
+    },
+    {
+      "id": "insertfailed",
+      "type": "failure",
+      "label": "Insert Failed",
+      "sublabel": "ClickHouse error",
+      "lane": "recovery",
+      "col": 1,
+      "tag": "retryable"
+    },
+    {
+      "id": "rejected",
+      "type": "failure",
+      "label": "Rejected",
+      "sublabel": "422 or 429",
+      "lane": "terminal",
+      "col": 0,
+      "tag": "terminal"
+    },
+    {
+      "id": "dropped",
+      "type": "failure",
+      "label": "Dropped",
+      "sublabel": "retries exhausted",
+      "lane": "terminal",
+      "col": 1,
+      "tag": "terminal"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "backlog",
+      "from": "published",
+      "to": "lagging",
+      "label": "consumer behind",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelAt": [
+        402,
+        233
+      ]
+    },
+    {
+      "id": "caught-up",
+      "from": "lagging",
+      "to": "aggregated",
+      "label": "caught up",
+      "variant": "emphasis",
+      "labelAt": [
+        455,
+        250
+      ]
+    },
+    {
+      "id": "insert-error",
+      "from": "aggregated",
+      "to": "insertfailed",
+      "label": "write error",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelAt": [
+        556,
+        233
+      ]
+    },
+    {
+      "id": "retry",
+      "from": "insertfailed",
+      "to": "aggregated",
+      "label": "retry with backoff",
+      "variant": "emphasis",
+      "labelAt": [
+        640,
+        245
+      ],
+      "fromSide": "right",
+      "toSide": "right",
+      "via": [
+        [
+          640,
+          307
+        ],
+        [
+          640,
+          157
+        ]
+      ]
+    },
+    {
+      "id": "give-up",
+      "from": "insertfailed",
+      "to": "dropped",
+      "label": "after 5 attempts",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelAt": [
+        556,
+        385
+      ]
+    },
+    {
+      "id": "invalid",
+      "from": "validated",
+      "to": "rejected",
+      "label": "invalid or throttled",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          248,
+          479
+        ]
+      ],
+      "labelAt": [
+        250,
+        400
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Accepted path",
+      "items": [
+        "An event is durable once it is published; everything after that is recoverable",
+        "Offsets are only committed after the ClickHouse insert succeeds"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Waiting is not failing",
+      "items": [
+        "A lagging event is still durable in Kafka — only the rollup is late",
+        "The collector answers 429 rather than silently dropping under load"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Terminal exits",
+      "items": [
+        "Rejected and Throttled are answered synchronously to the caller",
+        "Dropped is only reached after the retry budget is exhausted, and is alerted on"
+      ]
+    }
+  ]
+}

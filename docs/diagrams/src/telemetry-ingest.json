@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Telemetry Ingest Pipeline",
+    "subtitle": "From a search request to queryable metrics and anomalies",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "hot-path",
+        "label": "Hot path",
+        "focus": [
+          "services",
+          "collector",
+          "events",
+          "engine",
+          "clickhouse"
+        ],
+        "note": "The path every successful search event takes to durable storage."
+      },
+      {
+        "id": "failure-path",
+        "label": "Failure path",
+        "focus": [
+          "collector",
+          "errors",
+          "engine",
+          "anomalies"
+        ],
+        "note": "Failed queries and the anomalies derived from them."
+      }
+    ],
+    "viewBox": [
+      1140,
+      760
+    ]
+  },
+  "stages": [
+    {
+      "label": "Sources"
+    },
+    {
+      "label": "Ingest"
+    },
+    {
+      "label": "Stream"
+    },
+    {
+      "label": "Analyse"
+    },
+    {
+      "label": "Serve"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "services",
+      "type": "external",
+      "label": "Search Services",
+      "sublabel": "instrumented",
+      "stage": 0,
+      "row": 0,
+      "tag": "OTEL SDK"
+    },
+    {
+      "id": "simulator",
+      "type": "external",
+      "label": "Query Simulator",
+      "sublabel": "scenario traffic",
+      "stage": 0,
+      "row": 2,
+      "tag": "synthetic"
+    },
+    {
+      "id": "collector",
+      "type": "backend",
+      "label": "Telemetry Collector",
+      "sublabel": "validate + enrich",
+      "stage": 1,
+      "row": 1,
+      "tag": "rate limited"
+    },
+    {
+      "id": "events",
+      "type": "messagebus",
+      "label": "search.events",
+      "sublabel": "accepted queries",
+      "stage": 2,
+      "row": 0,
+      "tag": "7-day retention"
+    },
+    {
+      "id": "errors",
+      "type": "messagebus",
+      "label": "search.errors",
+      "sublabel": "failed queries",
+      "stage": 2,
+      "row": 2
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Metrics Engine",
+      "sublabel": "60s tumbling windows",
+      "stage": 3,
+      "row": 1,
+      "tag": "at-least-once"
+    },
+    {
+      "id": "clickhouse",
+      "type": "database",
+      "label": "ClickHouse",
+      "sublabel": "rollups + raw events",
+      "stage": 4,
+      "row": 0,
+      "tag": "TTL 90d"
+    },
+    {
+      "id": "anomalies",
+      "type": "messagebus",
+      "label": "search.anomalies",
+      "sublabel": "z-score breaches",
+      "stage": 4,
+      "row": 2
+    }
+  ],
+  "flows": [
+    {
+      "id": "production-telemetry",
+      "from": "services",
+      "to": "collector",
+      "label": "search telemetry",
+      "classification": "production",
+      "variant": "emphasis"
+    },
+    {
+      "id": "synthetic-traffic",
+      "from": "simulator",
+      "to": "collector",
+      "label": "synthetic traffic",
+      "classification": "local only"
+    },
+    {
+      "id": "accepted",
+      "from": "collector",
+      "to": "events",
+      "label": "validated events",
+      "classification": "append-only",
+      "variant": "emphasis"
+    },
+    {
+      "id": "rejected",
+      "from": "collector",
+      "to": "errors",
+      "label": "errors + timeouts",
+      "classification": "append-only"
+    },
+    {
+      "id": "consume-events",
+      "from": "events",
+      "to": "engine",
+      "label": "consume",
+      "classification": "consumer group",
+      "variant": "emphasis"
+    },
+    {
+      "id": "consume-errors",
+      "from": "errors",
+      "to": "engine",
+      "label": "consume",
+      "classification": "consumer group"
+    },
+    {
+      "id": "rollups",
+      "from": "engine",
+      "to": "clickhouse",
+      "label": "latency + relevance rollups",
+      "classification": "batched insert",
+      "variant": "emphasis"
+    },
+    {
+      "id": "detected",
+      "from": "engine",
+      "to": "anomalies",
+      "label": "z-score > 3\u03c3",
+      "classification": "derived",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Hot path",
+      "items": [
+        "Every event is validated and enriched before it reaches Kafka",
+        "Rollups are written in batches, so ClickHouse sees few large inserts"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Ordering and delivery",
+      "items": [
+        "Events are keyed by query id, so one query stays on one partition",
+        "The engine commits offsets after a successful insert: at-least-once"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Derived signals",
+      "items": [
+        "Anomalies are computed from a rolling baseline, not a fixed threshold",
+        "They re-enter Kafka so alerting and the dashboard share one source"
+      ]
+    }
+  ]
+}

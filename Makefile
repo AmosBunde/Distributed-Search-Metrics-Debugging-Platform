@@ -112,8 +112,8 @@ format: ## Auto-format all Python code
 # --- Diagrams (issue #2) ----------------------------------------------------
 
 .PHONY: diagrams
-diagrams: ## Regenerate architecture diagrams from their specs
-	$(call not_implemented,2)
+diagrams: ## Regenerate architecture diagrams from their specs (needs ARCHIFY_HOME)
+	$(PYTHON) scripts/build_diagrams.py
 
 # --- Images (issue #13) -----------------------------------------------------
 
