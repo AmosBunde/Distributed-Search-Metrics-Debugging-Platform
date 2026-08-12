@@ -63,6 +63,28 @@ def anomaly_row(anomaly: AnomalyEvent) -> dict[str, Any]:
     }
 
 
+def result_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """`search_metrics.query_results` rows from a results record."""
+    timestamp = str(payload.get("timestamp", "")).replace("T", " ")[:23]
+    return [
+        {
+            "query_id": payload["query_id"],
+            "service": payload.get("service", ""),
+            "timestamp": timestamp,
+            "document_id": result.get("document_id", ""),
+            "rank": result.get("rank", 0),
+            "score": result.get("score", 0.0),
+            "title": result.get("title") or "",
+        }
+        for result in payload.get("results", [])
+    ]
+
+
+def is_results_record(payload: dict[str, Any]) -> bool:
+    """Results records carry documents but no latency; events are the reverse."""
+    return "results" in payload and "latency_ms" not in payload
+
+
 @dataclass
 class BatchOutcome:
     """Everything one batch produced."""
@@ -70,6 +92,7 @@ class BatchOutcome:
     events: list[SearchEvent] = field(default_factory=list)
     rollups: list[MetricRollup] = field(default_factory=list)
     anomalies: list[AnomalyEvent] = field(default_factory=list)
+    results: list[dict[str, Any]] = field(default_factory=list)
     invalid: int = 0
 
     @property
@@ -88,6 +111,12 @@ class Pipeline:
         outcome = BatchOutcome()
 
         for payload in payloads:
+            # One consumer group reads three topics, so records are routed by
+            # shape rather than by which topic they arrived on.
+            if is_results_record(payload):
+                outcome.results.extend(result_rows(payload))
+                continue
+
             try:
                 event = SearchEvent.model_validate(payload)
             except ValidationError:

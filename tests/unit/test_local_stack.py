@@ -50,6 +50,7 @@ EXPECTED_SERVICES = {
     "metrics-engine",
     "debug-service",
     "api-gateway",
+    "query-simulator",
 }
 
 
@@ -63,7 +64,7 @@ def test_long_running_services_have_healthchecks(compose: dict) -> None:
     A built service may declare its check in its Dockerfile instead of here;
     either is fine, having neither is not.
     """
-    one_shot = {"kafka-init"}
+    one_shot = {"kafka-init", "query-simulator"}
     missing = []
 
     for name, service in compose["services"].items():

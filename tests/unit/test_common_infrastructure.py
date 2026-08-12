@@ -241,3 +241,87 @@ class TestTraceContext:
         tracer = configure_tracing("svc", Settings(otel_sdk_disabled=True))
         with tracer.start_as_current_span("noop"):
             pass
+
+
+class TestBatchPublishing:
+    """Awaiting each send in turn makes a 500-event batch take seconds."""
+
+    class PipeliningProducer:
+        """Mimics aiokafka: send() queues and returns a future to await later."""
+
+        def __init__(self) -> None:
+            self.queued: list[dict] = []
+            self.awaited = 0
+            self.order: list[str] = []
+
+        async def send(self, topic, value=None, key=None, headers=None):
+            self.queued.append({"topic": topic, "key": key})
+            self.order.append("send")
+
+            producer = self
+
+            class Future:
+                def __await__(self):
+                    producer.order.append("await")
+                    producer.awaited += 1
+                    return iter(())
+
+            return Future()
+
+    @pytest.mark.asyncio
+    async def test_every_send_is_queued_before_any_is_awaited(self) -> None:
+        producer = self.PipeliningProducer()
+        publisher = EventPublisher(producer, Settings())
+
+        events = [
+            SearchEvent(query_id=f"q-{i}", service="s", query="hi", latency_ms=1) for i in range(5)
+        ]
+        await publisher.publish_events(events)
+
+        assert producer.order == ["send"] * 5 + ["await"] * 5
+        assert producer.awaited == 5
+
+    @pytest.mark.asyncio
+    async def test_results_are_published_alongside_their_event(self) -> None:
+        producer = self.PipeliningProducer()
+        publisher = EventPublisher(producer, Settings())
+
+        await publisher.publish_events(
+            [
+                SearchEvent(
+                    query_id="q-1",
+                    service="s",
+                    query="hi",
+                    latency_ms=1,
+                    result_count=1,
+                    results=[SearchResult(document_id="d1", rank=1, score=0.5)],
+                )  # fmt: skip
+            ]
+        )
+
+        topics = [item["topic"] for item in producer.queued]
+        assert topics == ["search.events", "search.results"]
+
+    @pytest.mark.asyncio
+    async def test_failures_still_route_to_the_errors_topic_in_a_batch(self) -> None:
+        producer = self.PipeliningProducer()
+        publisher = EventPublisher(producer, Settings())
+
+        await publisher.publish_events(
+            [
+                SearchEvent(query_id="q-1", service="s", query="hi", latency_ms=1),
+                SearchEvent(
+                    query_id="q-2",
+                    service="s",
+                    query="hi",
+                    latency_ms=1,
+                    status=SearchStatus.ERROR,
+                    error_type="Boom",
+                ),  # fmt: skip
+            ]
+        )
+
+        assert [item["topic"] for item in producer.queued] == [
+            "search.events",
+            "search.errors",
+        ]
