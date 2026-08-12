@@ -1,0 +1,26 @@
+[project]
+name = "search-metrics-common"
+version = "0.1.0"
+description = "Shared models, settings, logging, tracing and Kafka helpers for the platform services"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.5,<3",
+    "aiokafka>=0.11,<0.13",
+    "lz4>=4.3,<5",
+    "opentelemetry-api>=1.27,<2",
+    "opentelemetry-sdk>=1.27,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27,<2",
+]
+
+[project.optional-dependencies]
+fastapi = [
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["search_metrics_common*"]
