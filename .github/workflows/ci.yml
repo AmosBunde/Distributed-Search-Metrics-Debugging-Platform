@@ -170,12 +170,21 @@ jobs:
       - name: helm lint
         run: |
           if [ -f helm/Chart.yaml ]; then
-            helm lint helm
+            # The chart requires an explicit image tag by design, so CI has to
+            # supply one exactly as a real deployment does.
+            helm lint helm --set image.tag=ci
             for values in helm/values*.yaml; do
               echo "::group::template with $values"
-              helm template search-metrics helm --values "$values" > /dev/null
+              helm template search-metrics helm --values "$values" --set image.tag=ci > /dev/null
               echo "::endgroup::"
             done
+            echo "::group::the missing-tag guard still fails the render"
+            if helm template search-metrics helm > /dev/null 2>&1; then
+              echo "chart rendered without image.tag — the guard is not working"
+              exit 1
+            fi
+            echo "confirmed: rendering without image.tag fails"
+            echo "::endgroup::"
           else
             echo "no chart yet — skipping"
           fi
